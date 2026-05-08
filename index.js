@@ -9,14 +9,14 @@ const app = express();
 app.use(express.json());
 
 // ──────────────────────────────────────────────
-//  CONFIGURAÇÕES — preencha com seus dados
+//  CONFIGURAÇÕES — lidas das variáveis de ambiente (Railway)
 // ──────────────────────────────────────────────
 const CONFIG = {
-  ZAPI_INSTANCE_ID: "SEU_INSTANCE_ID",       // ID da instância na Z-API
-  ZAPI_TOKEN: "SEU_TOKEN_ZAPI",              // Token da Z-API
-  ZAPI_CLIENT_TOKEN: "SEU_CLIENT_TOKEN",     // Client-Token da Z-API
-  ANTHROPIC_API_KEY: "SUA_CHAVE_ANTHROPIC",  // Chave da API Anthropic
-  PORT: 3000,
+  ZAPI_INSTANCE_ID: process.env.ZAPI_INSTANCE_ID,
+  ZAPI_TOKEN: process.env.ZAPI_TOKEN,
+  ZAPI_CLIENT_TOKEN: process.env.ZAPI_CLIENT_TOKEN,
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  PORT: process.env.PORT || 3000,
 };
 
 // ──────────────────────────────────────────────
@@ -88,9 +88,8 @@ COMO AGIR:
 
 // ──────────────────────────────────────────────
 //  MEMÓRIA DE CONVERSAS (em memória, por sessão)
-//  Para produção, use Redis ou banco de dados
 // ──────────────────────────────────────────────
-const conversas = new Map(); // chave: número do telefone
+const conversas = new Map();
 
 function getHistorico(telefone) {
   if (!conversas.has(telefone)) {
@@ -102,7 +101,6 @@ function getHistorico(telefone) {
 function adicionarMensagem(telefone, role, content) {
   const historico = getHistorico(telefone);
   historico.push({ role, content });
-  // Manter apenas as últimas 20 mensagens para não estourar o contexto
   if (historico.length > 20) {
     historico.splice(0, historico.length - 20);
   }
@@ -170,7 +168,7 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // Ignorar grupos (só atender conversas individuais)
+    // Ignorar grupos
     if (body.isGroup) {
       return res.status(200).json({ ok: true });
     }
@@ -184,12 +182,10 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Mensagem de ${telefone}: ${mensagem}`);
 
-    // Gerar resposta com Claude
     const resposta = await chamarClaude(telefone, mensagem);
 
     console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Resposta para ${telefone}: ${resposta.substring(0, 80)}...`);
 
-    // Enviar resposta via Z-API
     await enviarMensagem(telefone, resposta);
 
     res.status(200).json({ ok: true });
