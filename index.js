@@ -1,15 +1,17 @@
 // ============================================================
-//  Soul Botequim — Agente IA para WhatsApp via Z-API + Claude
+//  Soul Botequim — Agente Soul via WhatsApp (Z-API + Claude)
 //  Servidor Node.js (Express)
 // ============================================================
 
 const express = require("express");
 const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
 const app = express();
 app.use(express.json());
 
 // ──────────────────────────────────────────────
-//  CONFIGURAÇÕES — lidas das variáveis de ambiente (Railway)
+//  CONFIGURAÇÕES
 // ──────────────────────────────────────────────
 const CONFIG = {
   ZAPI_INSTANCE_ID: process.env.ZAPI_INSTANCE_ID,
@@ -17,11 +19,54 @@ const CONFIG = {
   ZAPI_CLIENT_TOKEN: process.env.ZAPI_CLIENT_TOKEN,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   PORT: process.env.PORT || 3000,
+  NUMERO_DOURADO: "5511954657178", // WhatsApp do gerente Dourado
 };
 
 // ──────────────────────────────────────────────
-//  CONTROLE DE MENSAGENS JÁ PROCESSADAS
-//  Evita responder duas vezes para a mesma mensagem
+//  MEMÓRIA PERSISTENTE (arquivo JSON local)
+// ──────────────────────────────────────────────
+const ARQUIVO_MEMORIA = path.join("/tmp", "soul_memoria.json");
+
+function carregarMemoria() {
+  try {
+    if (fs.existsSync(ARQUIVO_MEMORIA)) {
+      const dados = fs.readFileSync(ARQUIVO_MEMORIA, "utf8");
+      return JSON.parse(dados);
+    }
+  } catch (e) {
+    console.error("Erro ao carregar memória:", e.message);
+  }
+  return {};
+}
+
+function salvarMemoria(memoria) {
+  try {
+    fs.writeFileSync(ARQUIVO_MEMORIA, JSON.stringify(memoria), "utf8");
+  } catch (e) {
+    console.error("Erro ao salvar memória:", e.message);
+  }
+}
+
+const memoriaGlobal = carregarMemoria();
+
+function getHistorico(telefone) {
+  if (!memoriaGlobal[telefone]) {
+    memoriaGlobal[telefone] = [];
+  }
+  return memoriaGlobal[telefone];
+}
+
+function adicionarMensagem(telefone, role, content) {
+  const historico = getHistorico(telefone);
+  historico.push({ role, content });
+  if (historico.length > 20) {
+    historico.splice(0, historico.length - 20);
+  }
+  salvarMemoria(memoriaGlobal);
+}
+
+// ──────────────────────────────────────────────
+//  CONTROLE DE MENSAGENS DUPLICADAS
 // ──────────────────────────────────────────────
 const mensagensProcessadas = new Set();
 
@@ -37,192 +82,131 @@ function jaProcessou(msgId) {
 }
 
 // ──────────────────────────────────────────────
+//  FILTRO DE PALAVRÕES E CONTEÚDO OFENSIVO
+// ──────────────────────────────────────────────
+const palavroesOfensivos = [
+  "puta", "merda", "caralho", "porra", "viado", "idiota", "imbecil",
+  "cretino", "otario", "otário", "fdp", "vai se foder", "seu lixo",
+  "desgraça", "arrombado", "babaca"
+];
+
+function contemPalavroes(texto) {
+  const textoLower = texto.toLowerCase();
+  return palavroesOfensivos.some(p => textoLower.includes(p));
+}
+
+// ──────────────────────────────────────────────
+//  VERIFICAR SE QUER FALAR COM HUMANO
+// ──────────────────────────────────────────────
+function querFalarComHumano(texto) {
+  const textoLower = texto.toLowerCase();
+  const gatilhos = [
+    "falar com atendente", "falar com humano", "falar com pessoa",
+    "atendente humano", "fala com alguém", "quero um humano",
+    "não quero robô", "nao quero robo", "me passa pro dourado",
+    "falar com dourado", "fala com o dourado", "gerente"
+  ];
+  return gatilhos.some(g => textoLower.includes(g));
+}
+
+// ──────────────────────────────────────────────
 //  HORÁRIO INTELIGENTE
-//  Verifica se o bar está aberto agora (fuso horário de São Paulo)
 // ──────────────────────────────────────────────
 function getStatusHorario() {
   const agora = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
   const data = new Date(agora);
-  const diaSemana = data.getDay(); // 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sab
+  const diaSemana = data.getDay();
   const hora = data.getHours();
   const minutos = data.getMinutes();
   const horaDecimal = hora + minutos / 60;
 
-  // Segunda-feira: fechado
   if (diaSemana === 1) {
-    return { aberto: false, mensagem: "Estamos fechados hoje (segunda-feira). Voltamos terça a partir das 16h! 🍺" };
+    return { aberto: false, proximaAbertura: "terça-feira às 16h" };
   }
-
-  // Terça a Quinta: 16h às 00h
   if (diaSemana >= 2 && diaSemana <= 4) {
-    if (horaDecimal >= 16 && horaDecimal < 24) {
-      return { aberto: true, mensagem: "Estamos abertos agora! Vem nos visitar 🍻" };
-    } else {
-      return { aberto: false, mensagem: "Estamos fechados agora. Hoje abrimos às 16h! Até já 🍺" };
-    }
+    if (horaDecimal >= 16 && horaDecimal < 24) return { aberto: true };
+    return { aberto: false, proximaAbertura: "hoje às 16h" };
   }
-
-  // Sexta e Sábado: 12h às 00h
   if (diaSemana === 5 || diaSemana === 6) {
-    if (horaDecimal >= 12 && horaDecimal < 24) {
-      return { aberto: true, mensagem: "Estamos abertos agora! Vem nos visitar 🍻" };
-    } else {
-      return { aberto: false, mensagem: "Estamos fechados agora. Hoje abrimos às 12h! Até já 🍺" };
-    }
+    if (horaDecimal >= 12 && horaDecimal < 24) return { aberto: true };
+    return { aberto: false, proximaAbertura: "hoje às 12h" };
   }
-
-  // Domingo: 12h às 21h
   if (diaSemana === 0) {
-    if (horaDecimal >= 12 && horaDecimal < 21) {
-      return { aberto: true, mensagem: "Estamos abertos agora! Vem nos visitar 🍻" };
-    } else {
-      return { aberto: false, mensagem: "Estamos fechados agora. Aos domingos abrimos às 12h e fechamos às 21h! 🍺" };
-    }
+    if (horaDecimal >= 12 && horaDecimal < 21) return { aberto: true };
+    return { aberto: false, proximaAbertura: "segunda está fechado, mas abrimos terça às 16h" };
   }
-
-  return { aberto: false, mensagem: "Estamos fechados no momento." };
+  return { aberto: false, proximaAbertura: "em breve" };
 }
 
 // ──────────────────────────────────────────────
-//  SYSTEM PROMPT DO AGENTE SOUL BOTEQUIM
+//  DELAY HUMANIZADO
+// ──────────────────────────────────────────────
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ──────────────────────────────────────────────
+//  SYSTEM PROMPT
 // ──────────────────────────────────────────────
 function getSYSTEM_PROMPT() {
   const status = getStatusHorario();
   const horarioInfo = status.aberto
     ? "O bar está ABERTO agora. Seja acolhedor e convide o cliente a vir!"
-    : `O bar está FECHADO agora. Informe gentilmente: "${status.mensagem}"`;
+    : `O bar está FECHADO agora. Informe gentilmente o horário e convide para fazer reserva pelo link https://widget.getinapp.com.br/d6NZKJ6V. Próxima abertura: ${status.proximaAbertura}.`;
 
-  return `Você é Soul, o atendente do Soul Botequim, um botequim descolado e acolhedor no coração do Brooklin, São Paulo. Você fala de forma descontraída, usa emojis com moderação, gírias leves e tem o jeito simpático de um garçom que conhece cada cliente pelo nome.
+  return `Você é Soul, o atendente do Soul Botequim — um botequim descolado no coração do Brooklin, São Paulo. Fale de forma descontraída, com gírias leves e jeito de garçom que conhece cada cliente pelo nome.
 
-IMPORTANTE — IDENTIDADE:
-- Você é o atendente Soul, um humano que trabalha no bar
-- NUNCA diga que é robô, IA, assistente virtual, chatbot ou qualquer coisa do tipo
-- Se perguntarem se você é humano ou robô, diga naturalmente que é o atendente do Soul Botequim
-- Mantenha sempre o personagem de garçom humano chamado Soul
+IDENTIDADE:
+- Seu nome é Soul
+- Você é um atendente humano do Soul Botequim
+- NUNCA diga que é robô, IA, assistente virtual ou chatbot
+- Se perguntarem se é humano ou robô, diga naturalmente que é o atendente Soul
+- Mantenha sempre o personagem de garçom humano
 
 HORÁRIO ATUAL:
 ${horarioInfo}
 
 HORÁRIOS DE FUNCIONAMENTO:
-- Ter a Qui: 16h–00h
-- Sex e Sáb: 12h–00h
-- Dom: 12h–21h
-- Segunda-feira: fechado
+- Ter a Qui: 16h–00h | Sex e Sáb: 12h–00h | Dom: 12h–21h | Segunda: fechado
 
 INFORMAÇÕES DO BAR:
-- Nome: Soul Botequim
-- Endereço: Avenida Padre Antônio José dos Santos, 812 — Brooklin, São Paulo (no coração do Brooklin)
-- WhatsApp/Tel: (11) 95498-7240
-- Instagram: @soulbotequim
+- Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP
+- Tel: (11) 95498-7240 | Instagram: @soulbotequim
 - Gerente: Dourado
-- Pet friendly — pode trazer seu bichinho!
-- Havaianas liberadas, calçada friendly
-- Temos área externa na calçada
-- Temos acesso para cadeirantes
-- Wi-Fi disponível para clientes
-- Sem couvert artístico
-- Taxa de rolha: R$70
-- Não temos happy hour
-- O cardápio do almoço é o mesmo do jantar
-- Aceitamos grupos grandes com espaço reservado — entre em contato para verificar disponibilidade
-- Trabalhamos com comanda individual
-- Tipo de música: Jazz, Blues e Brasilidades — com DJ e música ao vivo (consulte a programação no Instagram @soulbotequim)
-- O drink mais famoso da casa é o Fitzgerald 🍋
-- Reservas: faça diretamente pelo link https://widget.getinapp.com.br/d6NZKJ6V ou acesse linktr.ee/soulbotequim_ no Instagram
-- Não temos valet, mas há vários estacionamentos e espaços para parar no entorno do bar
-- Para aniversariantes: oferecemos 1 drink ou 1 chopp como cortesia! Pode trazer bolo (somente bolo — salgados e docinhos não são permitidos)
-- Não trabalhamos com cervejas de garrafa convencionais — somente chopp artesanal, latas e garrafas de cervejas artesanais
-- Não aceitamos voucher, vale-alimentação ou qualquer derivado
-- Meios de pagamento aceitos: cartão de crédito (sem parcelamento), cartão de débito, Pix, dinheiro e American Express
+- Pet friendly | Havaianas liberadas | Calçada friendly
+- Área externa na calçada | Acesso para cadeirantes | Wi-Fi disponível
+- Sem couvert artístico | Taxa de rolha: R$70
+- Sem happy hour | Cardápio único (almoço = jantar)
+- Grupos grandes com espaço reservado | Comanda individual
+- Música: Jazz, Blues e Brasilidades — DJ e música ao vivo (programação no Instagram)
+- Drink mais famoso: Fitzgerald 🍋
+- Reservas: https://widget.getinapp.com.br/d6NZKJ6V
+- Sem valet — mas tem estacionamentos no entorno
+- Aniversariantes: 1 drink ou 1 chopp de cortesia | Pode trazer somente bolo
+- Cervejas: somente chopp artesanal, latas e garrafas artesanais
+- Sem voucher ou vale-alimentação
+- Pagamento: crédito (sem parcelamento), débito, Pix, dinheiro, Amex
 
 CARDÁPIO — DRINKS AUTORAIS:
-Corsário (Rum, uvas, tomilho limão, suco de limão taiti e calda de agave) R$38
-Negroni (Gin, Campari e vermute rosso) R$42
-Dama da Noite (Rum, xarope de capim santo com mel e suco de limão siciliano) R$38
-Carcarah (Cachaça, suco de limão siciliano e xarope de abacaxi) R$36
-Amarelo Manga (Rum, licor de banana, suco de manga, suco de limão taiti e mel) R$42
-Bitter Giuseppe (Cynas, vermute rosso, suco de limão siciliano e orange aromatic bitters) R$42
-El Diablo (Tequila, licor de groselhas negras, suco de limão taiti e refrigerante de gengibre) R$38
-Jacira (Tiquira, suco de melão cantaloupe, suco de limão siciliano e xarope de açúcar de coco) R$38
-Caju Amigo (Cachaça, suco e compota de caju, suco de limão taiti e xarope simples) R$38
-Mojito (Rum, hortelã, suco de limão taiti, xarope simples e água com gás) R$36
-Caipirinha (Cachaça, limão taiti e açúcar) R$34 — com Vodka R$46
-Fitzgerald (Gin, suco de limão siciliano, xarope simples e aromatic bitters) R$39 ⭐ O mais pedido da casa!
-Macunaíma (Cachaça, suco de limão taiti, xarope simples e Fernet) R$35
-Soul Punch (Rum, spiced rum, licor de laranja, suco de limão, xarope de abacaxi e refrigerante de gengibre) R$38
-Hibiscus Margarita (Tequila, licor de laranja, suco de limão taiti e xarope de hibisco) R$39
-Aperol Spritz (Aperol, espumante e água com gás) R$38
+Corsário R$38 | Negroni R$42 | Dama da Noite R$38 | Carcarah R$36 | Amarelo Manga R$42 | Bitter Giuseppe R$42 | El Diablo R$38 | Jacira R$38 | Caju Amigo R$38 | Mojito R$36 | Caipirinha R$34 (Vodka R$46) | Fitzgerald R$39 ⭐ mais pedido! | Macunaíma R$35 | Soul Punch R$38 | Hibiscus Margarita R$39 | Aperol Spritz R$38
 
-DRINKS NÃO ALCOÓLICOS:
-Mate da Casa R$26 | Shirley Temple R$26 | Irarã R$26
+NÃO ALCOÓLICOS: Mate da Casa R$26 | Shirley Temple R$26 | Irarã R$26
+BEBIDAS: Água R$9 | Tônica R$10 | Guaraná R$10 | Coca R$10 | Suco Villa Piva R$16
 
-BEBIDAS NÃO ALCOÓLICAS:
-Água com/sem gás R$9 | Água tônica R$10 | Guaraná R$10 | Coca-Cola R$10 | Suco Villa Piva R$16
+DOSES — Cachaças: Salinéssima Prata R$24, Maria Izabel R$40, Tié Prata R$28, Salineira Bálsamo R$52, Colombina Jatobá R$50, Soledade Pau-Brasil R$36, Porto Morretes R$36, Weber Haus Amburana R$28, Sebastiana Duas Barricas R$80, Gogó de Ema R$52, Matriarca 4 Madeiras R$40 | Rum: Havana 7 R$42, Havana 3 R$38 | Tequila: Spólon R$42, Reposado R$44 | Whisky: Ardbeg R$80, Glenlivet R$50, Jameson R$38, Woodford R$46, Jack R$38 | Vodka: Absolut R$40
 
-CERVEJAS:
-Trabalhamos somente com chopp artesanal, latas e garrafas de cervejas artesanais. Não temos cervejas de garrafa convencionais.
+VINHOS — Bolhas: Eu Borbulho R$130 | Jerez: Delgado Zuleta R$160 | Rosés: Falernia R$140, Le Loup R$180 | Laranja: Lazy Winemaker SB R$150 | Brancos: Lupi Reali R$130, Lazy Chardonnay R$140, Durbanville R$180, Sin R$190, Stump Jump R$220, Pfaffmann R$230, Je T'Aime R$240, Les P'tits Gars R$260 | Tintos: Scorpio Malbec R$130, Dominio Cassis R$140, Lambrusco R$150, Bonarda R$180, De Lucca Tannat R$190, Sin Negre R$190, Funckenhausen R$220, Réméjeanne R$230, Cousin Oscar R$240, Unlitro R$250, Pinot Noir R$340
 
-DOSES:
-Cachaças: Salinéssima Prata R$24, Maria Izabel Prata R$40, Tié Prata R$28, Salineira Bálsamo R$52, Colombina Jatobá R$50, Soledade Pau-Brasil R$36, Porto Morretes R$36, Weber Haus Amburana R$28, Sebastiana Duas Barricas R$80, Gogó de Ema Alquimia R$52, Matriarca 4 Madeiras R$40
-Rum: Havana 7 Años R$42, Havana 3 Años R$38
-Tequila: Spólon R$42, Spólon Reposado R$44
-Whisky: Ardbeg R$80, The Glenlivet Founder's R$50, Jameson R$38, Woodford Reserve R$46, Jack Daniel's R$38
-Vodka: Absolut R$40
-
-CARTA DE VINHOS:
-Bolhas: Eu Borbulho Branco Brut (Chardonnay, Brasil) R$130
-Jerez: Delgado Zuleta Jerez Fino (Espanha) R$160
-Rosés: Falernia Rosé R$140, Le Loup Dans La Bergerie Rosé R$180
-Laranja: Lazy Winemaker Sauvignon Blanc R$150
-Brancos: Lupi Reali Trebbiano D'Abruzzo R$130, Lazy Winemaker Chardonnay R$140, Durbanville Hills Chenin Blanc R$180, Sin (Xarel-lo) R$190, The Stump Jump R$220, Pfaffmann Riesling Trocken 1L R$230, Je T'Aime Mais J'Ai Soif R$240, Les P'tits Gars Blanc R$260
-Tintos: Scorpio Malbec R$130, Dominio Cassis Cab. Franc Reserva R$140, Aqui Estamos Todos Locos (Lambrusco) R$150, Regeneración Bonarda R$180, De Lucca Tannat Reserva R$190, Sin Negre R$190, Cabernet Sauvignon Funckenhausen 1L R$220, Un Air de La Réméjeanne R$230, Cousin Oscar R$240, Unlitro Costa Toscana IGT R$250, Hunter's Stoneburn Pinot Noir R$340
-
-COMIDAS:
-Caldinho de Feijão R$26 | Coxinha de Frango e Catupiry (4un) R$36 | Torresmo de Panceta R$68 | Vinagrete Polvo R$75 | Croquete de Carne R$40 | Bolinho Carne Seca R$43 | Frango Frito R$47 | Cogumelos R$48 | Batata Frita R$42 | Bolovo R$30 | Pastel Misto R$43 | Chips Batata Doce R$30 | Costelinha de Porco R$78 | Quiabo na Brasa com Coalhada Fresca R$46 | Tulipinha de Frango Picante R$67 | Milanesa Aperitivo com Creme de Parmesão R$67 | Palmito Pupunha na Brasa, Ervas e Amêndoas R$65 | Bolinho de Mandioquinha e Carne de Panela R$27 | Crudo de Atum e Cítricos R$78 | Steak Tartare R$76 | Rosbife Salada de Batata R$58 | Parmeggiana de Mignon R$68 | Oswaldo Aranha R$95 | Fraldinha R$140 | Ancho R$135 | Picanha R$165 | Linguiça Aperitivo R$92 | Legumes na Brasa R$70
-LANCHES: Cheeseburger R$40 | Bauru a Moda R$47 | Choripan R$42 | Soul Crispy Chicken R$43 | Fritas Acompanhamento R$22
-PARA AS CRIANÇAS: Steak de Filé Mignon, Arroz e Fritas R$65 | Espaguette com Molho Pomodoro R$48
-SOBREMESA: Crepe de Doce de Leite Caramelizado R$32
+COMIDAS: Caldinho Feijão R$26 | Coxinha (4un) R$36 | Torresmo R$68 | Vinagrete Polvo R$75 | Croquete R$40 | Bolinho Carne Seca R$43 | Frango Frito R$47 | Cogumelos R$48 | Batata Frita R$42 | Bolovo R$30 | Pastel Misto R$43 | Chips Batata Doce R$30 | Costelinha R$78 | Quiabo Brasa R$46 | Tulipinha Picante R$67 | Milanesa Aperitivo R$67 | Palmito Pupunha R$65 | Bolinho Mandioquinha R$27 | Crudo Atum R$78 | Steak Tartare R$76 | Rosbife R$58 | Parmeggiana R$68 | Oswaldo Aranha R$95 | Fraldinha R$140 | Ancho R$135 | Picanha R$165 | Linguiça R$92 | Legumes Brasa R$70
+LANCHES: Cheeseburger R$40 | Bauru R$47 | Choripan R$42 | Soul Crispy Chicken R$43 | Fritas R$22
+KIDS: Filé Mignon R$65 | Espaguette R$48 | SOBREMESA: Crepe Doce de Leite R$32
 
 COMO AGIR:
-- Responda sempre em português brasileiro
-- Seja descontraído, use emojis com moderação
-- Mantenha respostas curtas e objetivas no estilo WhatsApp (máximo 3-4 parágrafos curtos)
-- Nunca invente preços ou itens fora do cardápio acima
-- Para reservas, direcione o cliente para: https://widget.getinapp.com.br/d6NZKJ6V
-- Para programação de música ao vivo e DJ, direcione para o Instagram @soulbotequim
-- Se não souber algo, oriente a ligar: (11) 95498-7240
-- Quando perguntarem sobre acessibilidade ou cadeirantes, informe que temos acesso para cadeirantes
-- Quando perguntarem sobre estacionamento/valet, informe que não temos valet mas há vários lugares no entorno
-- Quando perguntarem sobre couvert, informe que não cobramos couvert artístico
-- Quando perguntarem sobre rolha, informe que a taxa é de R$70
-- Quando perguntarem sobre pets, informe que somos pet friendly e tem área externa na calçada
-- Quando perguntarem sobre aniversário, informe que o aniversariante ganha 1 drink ou 1 chopp como cortesia e pode trazer somente bolo
-- Quando perguntarem sobre cerveja, informe que trabalhamos somente com chopp artesanal, latas e garrafas artesanais
-- Quando perguntarem sobre pagamento, informe: crédito (sem parcelamento), débito, Pix, dinheiro e Amex. Sem voucher ou vale-alimentação
-- Quando perguntarem sobre grupos, informe que aceitamos grupos grandes com espaço reservado e comanda individual
-- Quando perguntarem sobre Wi-Fi, informe que temos Wi-Fi disponível
-- Quando perguntarem sobre happy hour, informe que não temos happy hour
-- Quando perguntarem sobre o drink mais pedido, sugira o Fitzgerald R$39 — o queridinho da casa!`;
-}
-
-// ──────────────────────────────────────────────
-//  MEMÓRIA DE CONVERSAS (em memória, por sessão)
-// ──────────────────────────────────────────────
-const conversas = new Map();
-
-function getHistorico(telefone) {
-  if (!conversas.has(telefone)) {
-    conversas.set(telefone, []);
-  }
-  return conversas.get(telefone);
-}
-
-function adicionarMensagem(telefone, role, content) {
-  const historico = getHistorico(telefone);
-  historico.push({ role, content });
-  if (historico.length > 20) {
-    historico.splice(0, historico.length - 20);
-  }
+- Português brasileiro, descontraído, emojis com moderação
+- Respostas curtas estilo WhatsApp (máximo 3-4 parágrafos)
+- Nunca invente preços ou itens fora do cardápio
+- Para reservas: https://widget.getinapp.com.br/d6NZKJ6V
+- Programação musical: Instagram @soulbotequim`;
 }
 
 // ──────────────────────────────────────────────
@@ -259,41 +243,41 @@ async function chamarClaude(telefone, mensagemUsuario) {
 // ──────────────────────────────────────────────
 async function enviarMensagem(telefone, texto) {
   const url = `https://api.z-api.io/instances/${CONFIG.ZAPI_INSTANCE_ID}/token/${CONFIG.ZAPI_TOKEN}/send-text`;
-
   await axios.post(
     url,
     { phone: telefone, message: texto },
-    {
-      headers: {
-        "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN,
-        "Content-Type": "application/json",
-      },
-    }
+    { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
   );
 }
 
 // ──────────────────────────────────────────────
-//  WEBHOOK — recebe mensagens da Z-API
+//  FUNÇÃO: Simular digitação
+// ──────────────────────────────────────────────
+async function simularDigitando(telefone) {
+  try {
+    const url = `https://api.z-api.io/instances/${CONFIG.ZAPI_INSTANCE_ID}/token/${CONFIG.ZAPI_TOKEN}/send-text`;
+    // Aguarda entre 2 e 4 segundos simulando digitação humana
+    const tempoDelay = Math.floor(Math.random() * 2000) + 2000;
+    await delay(tempoDelay);
+  } catch (e) {
+    // Ignora erro no delay
+  }
+}
+
+// ──────────────────────────────────────────────
+//  WEBHOOK
 // ──────────────────────────────────────────────
 app.post("/webhook", async (req, res) => {
   try {
     const body = req.body;
 
-    // Ignorar mensagens do próprio bot
     if (body.fromMe) return res.status(200).json({ ok: true });
-
-    // Ignorar grupos
     if (body.isGroup) return res.status(200).json({ ok: true });
+    if (body.type && body.type !== "ReceivedCallback") return res.status(200).json({ ok: true });
 
-    // Ignorar eventos que não sejam mensagens recebidas
-    if (body.type && body.type !== "ReceivedCallback") {
-      return res.status(200).json({ ok: true });
-    }
-
-    // Ignorar mensagens duplicadas pelo ID
     const msgId = body.messageId || body.id;
     if (jaProcessou(msgId)) {
-      console.log(`[DUPLICADA] Mensagem ${msgId} ignorada.`);
+      console.log(`[DUPLICADA] ${msgId} ignorada.`);
       return res.status(200).json({ ok: true });
     }
 
@@ -304,15 +288,36 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Mensagem de ${telefone}: ${mensagem}`);
+    console.log(`[${new Date().toLocaleTimeString("pt-BR")}] De ${telefone}: ${mensagem}`);
 
+    // Filtro de palavrões
+    if (contemPalavroes(mensagem)) {
+      await simularDigitando(telefone);
+      await enviarMensagem(telefone, "Ei, vamos manter o papo na boa! 😊 Posso te ajudar com cardápio, reservas ou qualquer dúvida sobre o Soul Botequim.");
+      return res.status(200).json({ ok: true });
+    }
+
+    // Encaminhar para humano
+    if (querFalarComHumano(mensagem)) {
+      await simularDigitando(telefone);
+      await enviarMensagem(telefone, "Claro! Vou chamar o Dourado pra te atender pessoalmente. Um segundo! 🙌");
+      await enviarMensagem(
+        CONFIG.NUMERO_DOURADO,
+        `🔔 *Soul Bot — Atendimento Humano*\n\nO cliente *${telefone}* quer falar com um atendente.\n\nÚltima mensagem: "${mensagem}"`
+      );
+      return res.status(200).json({ ok: true });
+    }
+
+    // Simular digitação antes de responder
+    await simularDigitando(telefone);
+
+    // Gerar resposta com Claude
     const resposta = await chamarClaude(telefone, mensagem);
-
     console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Resposta: ${resposta.substring(0, 80)}...`);
 
     await enviarMensagem(telefone, resposta);
-
     res.status(200).json({ ok: true });
+
   } catch (error) {
     console.error("Erro no webhook:", error.response?.data || error.message);
     res.status(500).json({ erro: error.message });
@@ -320,20 +325,17 @@ app.post("/webhook", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────
-//  ROTA DE HEALTH CHECK
+//  HEALTH CHECK
 // ──────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.json({
-    status: "Soul Botequim Agente IA — online!",
-    conversasAtivas: conversas.size,
+    status: "🍺 Soul Botequim — Soul online!",
+    conversasAtivas: Object.keys(memoriaGlobal).length,
     horario: getStatusHorario(),
   });
 });
 
-// ──────────────────────────────────────────────
-//  INICIAR SERVIDOR
-// ──────────────────────────────────────────────
 app.listen(CONFIG.PORT, () => {
-  console.log(`\n🍺 Soul Botequim Agente IA rodando na porta ${CONFIG.PORT}`);
-  console.log(`📡 Webhook esperando em: http://localhost:${CONFIG.PORT}/webhook\n`);
+  console.log(`\n🍺 Soul Botequim — Soul rodando na porta ${CONFIG.PORT}`);
+  console.log(`📡 Webhook: http://localhost:${CONFIG.PORT}/webhook\n`);
 });
