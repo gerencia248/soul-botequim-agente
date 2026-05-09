@@ -84,7 +84,6 @@ async function processarFluxoEvento(telefone, mensagem) {
   // Se ainda tem etapas, faz a próxima pergunta
   if (fluxo.etapa < ETAPAS_EVENTO.length) {
     const proximaEtapa = ETAPAS_EVENTO[fluxo.etapa];
-    await delay(1000);
     await enviarMensagem(telefone, proximaEtapa.pergunta);
     return;
   }
@@ -97,7 +96,6 @@ async function processarFluxoEvento(telefone, mensagem) {
   delete fluxoEventos[telefone];
 
   // Mensagem de confirmação para o cliente
-  await delay(1000);
   await enviarMensagem(telefone,
     `Perfeito! Recebi todas as informações do seu evento! 🎉\n\nNosso gerente Dourado vai entrar em contato em breve para montar o pacote ideal pra vocês.\n\nQualquer dúvida é só chamar aqui! 🍺`
   );
@@ -376,14 +374,12 @@ app.post("/webhook", async (req, res) => {
 
     // 2. Filtro de palavrões
     if (contemPalavroes(mensagem)) {
-      await delay(1000);
       await enviarMensagem(telefone, "Ei, vamos manter o papo na boa! 😊 Posso te ajudar com cardápio, reservas ou qualquer dúvida sobre o Soul Botequim.");
       return res.status(200).json({ ok: true });
     }
 
     // 3. Quer falar com humano?
     if (querFalarComHumano(mensagem)) {
-      await delay(1000);
       await enviarMensagem(telefone, "Claro! Vou chamar o Dourado pra te atender pessoalmente. Um segundo! 🙌");
       await enviarMensagem(CONFIG.NUMERO_DOURADO,
         `🔔 *Soul Bot — Atendimento Humano*\n\nCliente *${telefone}* quer falar com atendente.\n\nÚltima mensagem: "${mensagem}"`
@@ -394,7 +390,6 @@ app.post("/webhook", async (req, res) => {
     // 4. Quer evento corporativo?
     if (querEventoCorporativo(mensagem)) {
       iniciarFluxoEvento(telefone);
-      await delay(1000);
       await enviarMensagem(telefone,
         `Que ótimo! Adoramos receber empresas aqui no Soul! 🎉\n\nVou precisar de algumas informações para montar o pacote ideal pra vocês.\n\n${ETAPAS_EVENTO[0].pergunta}`
       );
@@ -403,13 +398,11 @@ app.post("/webhook", async (req, res) => {
 
     // 5. Quer recomendação de drink?
     if (querRecomendacaoDrink(mensagem)) {
-      await delay(1000);
       await enviarMensagem(telefone, "Boa! Vou te ajudar a escolher o drink perfeito! 🍹\n\nMe conta: você tá afim de algo *refrescante*, *forte*, *clássico*, *tropical/brasileiro* ou quer algo *diferente e autoral*?");
       return res.status(200).json({ ok: true });
     }
 
     // 6. Resposta padrão com Claude
-    await delay(1000);
     const resposta = await chamarClaude(telefone, mensagem);
     console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Resposta: ${resposta.substring(0, 80)}...`);
     await enviarMensagem(telefone, resposta);
