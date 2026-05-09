@@ -19,50 +19,115 @@ const CONFIG = {
   ZAPI_CLIENT_TOKEN: process.env.ZAPI_CLIENT_TOKEN,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   PORT: process.env.PORT || 3000,
-  NUMERO_DOURADO: "5511954657178", // WhatsApp do gerente Dourado
+  NUMERO_DOURADO: "5511954657178",
 };
 
 // ──────────────────────────────────────────────
-//  MEMÓRIA PERSISTENTE (arquivo JSON local)
+//  MEMÓRIA PERSISTENTE
 // ──────────────────────────────────────────────
 const ARQUIVO_MEMORIA = path.join("/tmp", "soul_memoria.json");
+const ARQUIVO_EVENTOS = path.join("/tmp", "soul_eventos.json");
 
-function carregarMemoria() {
+function carregarArquivo(arquivo) {
   try {
-    if (fs.existsSync(ARQUIVO_MEMORIA)) {
-      const dados = fs.readFileSync(ARQUIVO_MEMORIA, "utf8");
-      return JSON.parse(dados);
+    if (fs.existsSync(arquivo)) {
+      return JSON.parse(fs.readFileSync(arquivo, "utf8"));
     }
   } catch (e) {
-    console.error("Erro ao carregar memória:", e.message);
+    console.error("Erro ao carregar arquivo:", e.message);
   }
   return {};
 }
 
-function salvarMemoria(memoria) {
+function salvarArquivo(arquivo, dados) {
   try {
-    fs.writeFileSync(ARQUIVO_MEMORIA, JSON.stringify(memoria), "utf8");
+    fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2), "utf8");
   } catch (e) {
-    console.error("Erro ao salvar memória:", e.message);
+    console.error("Erro ao salvar arquivo:", e.message);
   }
 }
 
-const memoriaGlobal = carregarMemoria();
+const memoriaGlobal = carregarArquivo(ARQUIVO_MEMORIA);
+const eventosCapturados = carregarArquivo(ARQUIVO_EVENTOS);
 
-function getHistorico(telefone) {
-  if (!memoriaGlobal[telefone]) {
-    memoriaGlobal[telefone] = [];
+// ──────────────────────────────────────────────
+//  CONTROLE DE FLUXO DE EVENTOS CORPORATIVOS
+//  Guarda em qual etapa da coleta cada cliente está
+// ──────────────────────────────────────────────
+const fluxoEventos = {};
+
+const ETAPAS_EVENTO = [
+  { campo: "nome", pergunta: "Qual é o seu nome? 😊" },
+  { campo: "empresa", pergunta: "Qual é o nome da sua empresa ou organização?" },
+  { campo: "data", pergunta: "Qual data você tem em mente para o evento? 📅" },
+  { campo: "pessoas", pergunta: "Quantas pessoas participarão? 👥" },
+  { campo: "tipo", pergunta: "Que tipo de evento é? (confraternização, reunião, aniversário, happy hour corporativo, outro)" },
+  { campo: "orcamento", pergunta: "Qual é o orçamento aproximado por pessoa ou total? 💰" },
+];
+
+function iniciarFluxoEvento(telefone) {
+  fluxoEventos[telefone] = { etapa: 0, dados: {} };
+}
+
+function estaNoFluxoEvento(telefone) {
+  return fluxoEventos[telefone] !== undefined;
+}
+
+async function processarFluxoEvento(telefone, mensagem) {
+  const fluxo = fluxoEventos[telefone];
+  const etapaAtual = ETAPAS_EVENTO[fluxo.etapa];
+
+  // Salva a resposta da etapa atual
+  fluxo.dados[etapaAtual.campo] = mensagem;
+  fluxo.etapa++;
+
+  // Se ainda tem etapas, faz a próxima pergunta
+  if (fluxo.etapa < ETAPAS_EVENTO.length) {
+    const proximaEtapa = ETAPAS_EVENTO[fluxo.etapa];
+    await delay(2000);
+    await enviarMensagem(telefone, proximaEtapa.pergunta);
+    return;
   }
+
+  // Fluxo completo — salva e notifica o Dourado
+  const dadosEvento = fluxo.dados;
+  const id = `evento_${Date.now()}`;
+  eventosCapturados[id] = { telefone, ...dadosEvento, criadoEm: new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) };
+  salvarArquivo(ARQUIVO_EVENTOS, eventosCapturados);
+  delete fluxoEventos[telefone];
+
+  // Mensagem de confirmação para o cliente
+  await delay(2000);
+  await enviarMensagem(telefone,
+    `Perfeito! Recebi todas as informações do seu evento! 🎉\n\nNosso gerente Dourado vai entrar em contato em breve para montar o pacote ideal pra vocês.\n\nQualquer dúvida é só chamar aqui! 🍺`
+  );
+
+  // Notificação para o Dourado
+  const resumo = `🎉 *NOVO LEAD — Evento Corporativo*\n\n` +
+    `📱 Contato: ${telefone}\n` +
+    `👤 Nome: ${dadosEvento.nome}\n` +
+    `🏢 Empresa: ${dadosEvento.empresa}\n` +
+    `📅 Data: ${dadosEvento.data}\n` +
+    `👥 Pessoas: ${dadosEvento.pessoas}\n` +
+    `🎊 Tipo: ${dadosEvento.tipo}\n` +
+    `💰 Orçamento: ${dadosEvento.orcamento}`;
+
+  await enviarMensagem(CONFIG.NUMERO_DOURADO, resumo);
+}
+
+// ──────────────────────────────────────────────
+//  MEMÓRIA DE CONVERSAS
+// ──────────────────────────────────────────────
+function getHistorico(telefone) {
+  if (!memoriaGlobal[telefone]) memoriaGlobal[telefone] = [];
   return memoriaGlobal[telefone];
 }
 
 function adicionarMensagem(telefone, role, content) {
   const historico = getHistorico(telefone);
   historico.push({ role, content });
-  if (historico.length > 20) {
-    historico.splice(0, historico.length - 20);
-  }
-  salvarMemoria(memoriaGlobal);
+  if (historico.length > 20) historico.splice(0, historico.length - 20);
+  salvarArquivo(ARQUIVO_MEMORIA, memoriaGlobal);
 }
 
 // ──────────────────────────────────────────────
@@ -82,7 +147,7 @@ function jaProcessou(msgId) {
 }
 
 // ──────────────────────────────────────────────
-//  FILTRO DE PALAVRÕES E CONTEÚDO OFENSIVO
+//  FILTRO DE PALAVRÕES
 // ──────────────────────────────────────────────
 const palavroesOfensivos = [
   "puta", "merda", "caralho", "porra", "viado", "idiota", "imbecil",
@@ -91,22 +156,37 @@ const palavroesOfensivos = [
 ];
 
 function contemPalavroes(texto) {
-  const textoLower = texto.toLowerCase();
-  return palavroesOfensivos.some(p => textoLower.includes(p));
+  const t = texto.toLowerCase();
+  return palavroesOfensivos.some(p => t.includes(p));
 }
 
 // ──────────────────────────────────────────────
-//  VERIFICAR SE QUER FALAR COM HUMANO
+//  DETECTAR INTENÇÕES ESPECIAIS
 // ──────────────────────────────────────────────
 function querFalarComHumano(texto) {
-  const textoLower = texto.toLowerCase();
-  const gatilhos = [
-    "falar com atendente", "falar com humano", "falar com pessoa",
-    "atendente humano", "fala com alguém", "quero um humano",
-    "não quero robô", "nao quero robo", "me passa pro dourado",
-    "falar com dourado", "fala com o dourado", "gerente"
-  ];
-  return gatilhos.some(g => textoLower.includes(g));
+  const t = texto.toLowerCase();
+  return ["falar com atendente", "falar com humano", "falar com pessoa",
+    "atendente humano", "quero um humano", "não quero robô", "nao quero robo",
+    "me passa pro dourado", "falar com dourado", "fala com o dourado", "gerente"
+  ].some(g => t.includes(g));
+}
+
+function querEventoCorporativo(texto) {
+  const t = texto.toLowerCase();
+  return ["evento corporativo", "confraternização", "confraternizacao", "evento empresa",
+    "evento corporativo", "festa empresa", "reunião empresa", "happy hour empresa",
+    "pacote evento", "evento para empresa", "aniversario empresa", "comemoração empresa",
+    "evento para grupo", "reserva para empresa"
+  ].some(g => t.includes(g));
+}
+
+function querRecomendacaoDrink(texto) {
+  const t = texto.toLowerCase();
+  return ["me indica", "me recomenda", "qual drink", "o que você sugere",
+    "o que me recomenda", "não sei o que pedir", "nao sei o que pedir",
+    "me sugere um drink", "qual é o melhor", "qual devo pedir",
+    "algo refrescante", "algo forte", "drink leve", "drink especial"
+  ].some(g => t.includes(g));
 }
 
 // ──────────────────────────────────────────────
@@ -115,31 +195,24 @@ function querFalarComHumano(texto) {
 function getStatusHorario() {
   const agora = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
   const data = new Date(agora);
-  const diaSemana = data.getDay();
-  const hora = data.getHours();
-  const minutos = data.getMinutes();
-  const horaDecimal = hora + minutos / 60;
+  const dia = data.getDay();
+  const h = data.getHours() + data.getMinutes() / 60;
 
-  if (diaSemana === 1) {
-    return { aberto: false, proximaAbertura: "terça-feira às 16h" };
+  if (dia === 1) return { aberto: false, proximaAbertura: "terça-feira às 16h" };
+  if (dia >= 2 && dia <= 4) {
+    return h >= 16 && h < 24 ? { aberto: true } : { aberto: false, proximaAbertura: "hoje às 16h" };
   }
-  if (diaSemana >= 2 && diaSemana <= 4) {
-    if (horaDecimal >= 16 && horaDecimal < 24) return { aberto: true };
-    return { aberto: false, proximaAbertura: "hoje às 16h" };
+  if (dia === 5 || dia === 6) {
+    return h >= 12 && h < 24 ? { aberto: true } : { aberto: false, proximaAbertura: "hoje às 12h" };
   }
-  if (diaSemana === 5 || diaSemana === 6) {
-    if (horaDecimal >= 12 && horaDecimal < 24) return { aberto: true };
-    return { aberto: false, proximaAbertura: "hoje às 12h" };
-  }
-  if (diaSemana === 0) {
-    if (horaDecimal >= 12 && horaDecimal < 21) return { aberto: true };
-    return { aberto: false, proximaAbertura: "segunda está fechado, mas abrimos terça às 16h" };
+  if (dia === 0) {
+    return h >= 12 && h < 21 ? { aberto: true } : { aberto: false, proximaAbertura: "segunda fechamos, mas abrimos terça às 16h" };
   }
   return { aberto: false, proximaAbertura: "em breve" };
 }
 
 // ──────────────────────────────────────────────
-//  DELAY HUMANIZADO
+//  DELAY
 // ──────────────────────────────────────────────
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -152,65 +225,84 @@ function getSYSTEM_PROMPT() {
   const status = getStatusHorario();
   const horarioInfo = status.aberto
     ? "O bar está ABERTO agora. Seja acolhedor e convide o cliente a vir!"
-    : `O bar está FECHADO agora. Informe gentilmente o horário e convide para fazer reserva pelo link https://widget.getinapp.com.br/d6NZKJ6V. Próxima abertura: ${status.proximaAbertura}.`;
+    : `O bar está FECHADO. Informe gentilmente e convide para fazer reserva: https://widget.getinapp.com.br/d6NZKJ6V. Próxima abertura: ${status.proximaAbertura}.`;
 
-  return `Você é Soul, o atendente do Soul Botequim — um botequim descolado no coração do Brooklin, São Paulo. Fale de forma descontraída, com gírias leves e jeito de garçom que conhece cada cliente pelo nome.
+  return `Você é Soul, o atendente do Soul Botequim — botequim descolado no coração do Brooklin, SP. Fale de forma descontraída, com gírias leves e jeito de garçom que conhece cada cliente pelo nome.
 
 IDENTIDADE:
-- Seu nome é Soul
-- Você é um atendente humano do Soul Botequim
-- NUNCA diga que é robô, IA, assistente virtual ou chatbot
-- Se perguntarem se é humano ou robô, diga naturalmente que é o atendente Soul
-- Mantenha sempre o personagem de garçom humano
+- Seu nome é Soul, atendente humano do Soul Botequim
+- NUNCA diga que é robô, IA ou chatbot
+- Se perguntarem, diga que é o atendente Soul
 
-HORÁRIO ATUAL:
-${horarioInfo}
+HORÁRIO ATUAL: ${horarioInfo}
 
-HORÁRIOS DE FUNCIONAMENTO:
-- Ter a Qui: 16h–00h | Sex e Sáb: 12h–00h | Dom: 12h–21h | Segunda: fechado
+HORÁRIOS: Ter–Qui 16h–00h | Sex–Sáb 12h–00h | Dom 12h–21h | Seg: fechado
 
-INFORMAÇÕES DO BAR:
+INFORMAÇÕES:
 - Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP
-- Tel: (11) 95498-7240 | Instagram: @soulbotequim
-- Gerente: Dourado
-- Pet friendly | Havaianas liberadas | Calçada friendly
-- Área externa na calçada | Acesso para cadeirantes | Wi-Fi disponível
-- Sem couvert artístico | Taxa de rolha: R$70
-- Sem happy hour | Cardápio único (almoço = jantar)
-- Grupos grandes com espaço reservado | Comanda individual
-- Música: Jazz, Blues e Brasilidades — DJ e música ao vivo (programação no Instagram)
+- Tel: (11) 95498-7240 | Instagram: @soulbotequim | Gerente: Dourado
+- Pet friendly | Calçada friendly | Área externa | Acesso cadeirantes | Wi-Fi
+- Sem couvert | Taxa de rolha R$70 | Sem happy hour | Comanda individual
+- Grupos grandes com espaço reservado
+- Música: Jazz, Blues e Brasilidades — programação semanal no Instagram @soulbotequim
 - Drink mais famoso: Fitzgerald 🍋
 - Reservas: https://widget.getinapp.com.br/d6NZKJ6V
-- Sem valet — mas tem estacionamentos no entorno
-- Aniversariantes: 1 drink ou 1 chopp de cortesia | Pode trazer somente bolo
+- Sem valet — estacionamentos no entorno
+- Aniversariantes: 1 drink ou chopp de cortesia | Pode trazer somente bolo
 - Cervejas: somente chopp artesanal, latas e garrafas artesanais
-- Sem voucher ou vale-alimentação
+- Sem voucher/vale-alimentação
 - Pagamento: crédito (sem parcelamento), débito, Pix, dinheiro, Amex
+- Eventos corporativos: temos pacotes especiais — o cliente deve solicitar para iniciar o processo
+
+RECOMENDAÇÃO DE DRINKS POR HUMOR:
+- Cliente quer algo REFRESCANTE: sugira Corsário, Mojito, Hibiscus Margarita ou Aperol Spritz
+- Cliente quer algo FORTE: sugira Negroni, Macunaíma ou Bitter Giuseppe
+- Cliente quer algo CLÁSSICO: sugira Fitzgerald (o queridinho da casa!), Caipirinha ou Negroni
+- Cliente quer algo TROPICAL/BRASILEIRO: sugira Caju Amigo, Carcarah ou Amarelo Manga
+- Cliente quer algo DIFERENTE/AUTORAL: sugira Jacira, Dama da Noite ou El Diablo
+- Sempre descreva brevemente os ingredientes e o sabor ao recomendar
 
 CARDÁPIO — DRINKS AUTORAIS:
-Corsário R$38 | Negroni R$42 | Dama da Noite R$38 | Carcarah R$36 | Amarelo Manga R$42 | Bitter Giuseppe R$42 | El Diablo R$38 | Jacira R$38 | Caju Amigo R$38 | Mojito R$36 | Caipirinha R$34 (Vodka R$46) | Fitzgerald R$39 ⭐ mais pedido! | Macunaíma R$35 | Soul Punch R$38 | Hibiscus Margarita R$39 | Aperol Spritz R$38
+Corsário (Rum, uvas, tomilho limão, limão taiti, agave) R$38
+Negroni (Gin, Campari, vermute rosso) R$42
+Dama da Noite (Rum, capim santo, mel, limão siciliano) R$38
+Carcarah (Cachaça, limão siciliano, abacaxi) R$36
+Amarelo Manga (Rum, banana, manga, limão taiti, mel) R$42
+Bitter Giuseppe (Cynas, vermute rosso, limão siciliano, bitters) R$42
+El Diablo (Tequila, groselha negra, limão taiti, gengibre) R$38
+Jacira (Tiquira, melão, limão siciliano, açúcar de coco) R$38
+Caju Amigo (Cachaça, caju, limão taiti) R$38
+Mojito (Rum, hortelã, limão taiti, água com gás) R$36
+Caipirinha R$34 | com Vodka R$46
+Fitzgerald (Gin, limão siciliano, xarope, bitters) R$39 ⭐ O mais pedido!
+Macunaíma (Cachaça, limão taiti, Fernet) R$35
+Soul Punch (Rum, spiced rum, laranja, abacaxi, gengibre) R$38
+Hibiscus Margarita (Tequila, laranja, limão taiti, hibisco) R$39
+Aperol Spritz (Aperol, espumante, água com gás) R$38
+NÃO ALCOÓLICOS: Mate R$26 | Shirley Temple R$26 | Irarã R$26
+BEBIDAS: Água R$9 | Tônica R$10 | Guaraná R$10 | Coca R$10 | Suco R$16
 
-NÃO ALCOÓLICOS: Mate da Casa R$26 | Shirley Temple R$26 | Irarã R$26
-BEBIDAS: Água R$9 | Tônica R$10 | Guaraná R$10 | Coca R$10 | Suco Villa Piva R$16
+DOSES — Cachaças: Salinéssima Prata R$24, Maria Izabel R$40, Tié Prata R$28, Salineira Bálsamo R$52, Colombina Jatobá R$50, Soledade R$36, Porto Morretes R$36, Weber Haus R$28, Sebastiana R$80, Gogó de Ema R$52, Matriarca R$40
+Rum: Havana 7 R$42, Havana 3 R$38 | Tequila: Spólon R$42, Reposado R$44
+Whisky: Ardbeg R$80, Glenlivet R$50, Jameson R$38, Woodford R$46, Jack R$38 | Vodka: Absolut R$40
 
-DOSES — Cachaças: Salinéssima Prata R$24, Maria Izabel R$40, Tié Prata R$28, Salineira Bálsamo R$52, Colombina Jatobá R$50, Soledade Pau-Brasil R$36, Porto Morretes R$36, Weber Haus Amburana R$28, Sebastiana Duas Barricas R$80, Gogó de Ema R$52, Matriarca 4 Madeiras R$40 | Rum: Havana 7 R$42, Havana 3 R$38 | Tequila: Spólon R$42, Reposado R$44 | Whisky: Ardbeg R$80, Glenlivet R$50, Jameson R$38, Woodford R$46, Jack R$38 | Vodka: Absolut R$40
+VINHOS: Bolhas R$130 | Jerez R$160 | Rosés R$140–180 | Laranja R$150 | Brancos R$130–260 | Tintos R$130–340
 
-VINHOS — Bolhas: Eu Borbulho R$130 | Jerez: Delgado Zuleta R$160 | Rosés: Falernia R$140, Le Loup R$180 | Laranja: Lazy Winemaker SB R$150 | Brancos: Lupi Reali R$130, Lazy Chardonnay R$140, Durbanville R$180, Sin R$190, Stump Jump R$220, Pfaffmann R$230, Je T'Aime R$240, Les P'tits Gars R$260 | Tintos: Scorpio Malbec R$130, Dominio Cassis R$140, Lambrusco R$150, Bonarda R$180, De Lucca Tannat R$190, Sin Negre R$190, Funckenhausen R$220, Réméjeanne R$230, Cousin Oscar R$240, Unlitro R$250, Pinot Noir R$340
-
-COMIDAS: Caldinho Feijão R$26 | Coxinha (4un) R$36 | Torresmo R$68 | Vinagrete Polvo R$75 | Croquete R$40 | Bolinho Carne Seca R$43 | Frango Frito R$47 | Cogumelos R$48 | Batata Frita R$42 | Bolovo R$30 | Pastel Misto R$43 | Chips Batata Doce R$30 | Costelinha R$78 | Quiabo Brasa R$46 | Tulipinha Picante R$67 | Milanesa Aperitivo R$67 | Palmito Pupunha R$65 | Bolinho Mandioquinha R$27 | Crudo Atum R$78 | Steak Tartare R$76 | Rosbife R$58 | Parmeggiana R$68 | Oswaldo Aranha R$95 | Fraldinha R$140 | Ancho R$135 | Picanha R$165 | Linguiça R$92 | Legumes Brasa R$70
+COMIDAS: Caldinho R$26 | Coxinha R$36 | Torresmo R$68 | Polvo R$75 | Croquete R$40 | Bolinho Carne Seca R$43 | Frango Frito R$47 | Cogumelos R$48 | Batata Frita R$42 | Bolovo R$30 | Pastel R$43 | Chips R$30 | Costelinha R$78 | Quiabo R$46 | Tulipinha R$67 | Milanesa R$67 | Palmito R$65 | Bolinho Mandioquinha R$27 | Crudo Atum R$78 | Tartare R$76 | Rosbife R$58 | Parmeggiana R$68 | Oswaldo Aranha R$95 | Fraldinha R$140 | Ancho R$135 | Picanha R$165 | Linguiça R$92 | Legumes R$70
 LANCHES: Cheeseburger R$40 | Bauru R$47 | Choripan R$42 | Soul Crispy Chicken R$43 | Fritas R$22
-KIDS: Filé Mignon R$65 | Espaguette R$48 | SOBREMESA: Crepe Doce de Leite R$32
+KIDS: Filé R$65 | Espaguette R$48 | SOBREMESA: Crepe Doce de Leite R$32
 
 COMO AGIR:
 - Português brasileiro, descontraído, emojis com moderação
 - Respostas curtas estilo WhatsApp (máximo 3-4 parágrafos)
 - Nunca invente preços ou itens fora do cardápio
 - Para reservas: https://widget.getinapp.com.br/d6NZKJ6V
-- Programação musical: Instagram @soulbotequim`;
+- Programação musical: sempre direcione para @soulbotequim no Instagram
+- Quando o bar estiver fechado, além do horário sempre convide para reservar pelo Getin`;
 }
 
 // ──────────────────────────────────────────────
-//  FUNÇÃO: Chamar a API do Claude
+//  FUNÇÃO: Chamar Claude
 // ──────────────────────────────────────────────
 async function chamarClaude(telefone, mensagemUsuario) {
   adicionarMensagem(telefone, "user", mensagemUsuario);
@@ -239,7 +331,7 @@ async function chamarClaude(telefone, mensagemUsuario) {
 }
 
 // ──────────────────────────────────────────────
-//  FUNÇÃO: Enviar mensagem via Z-API
+//  FUNÇÃO: Enviar mensagem
 // ──────────────────────────────────────────────
 async function enviarMensagem(telefone, texto) {
   const url = `https://api.z-api.io/instances/${CONFIG.ZAPI_INSTANCE_ID}/token/${CONFIG.ZAPI_TOKEN}/send-text`;
@@ -248,28 +340,6 @@ async function enviarMensagem(telefone, texto) {
     { phone: telefone, message: texto },
     { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
   );
-}
-
-// ──────────────────────────────────────────────
-//  FUNÇÃO: Simular digitação via Z-API
-// ──────────────────────────────────────────────
-async function simularDigitando(telefone) {
-  try {
-    // Ativa o indicador "digitando..." na Z-API
-    const urlDigitando = `https://api.z-api.io/instances/${CONFIG.ZAPI_INSTANCE_ID}/token/${CONFIG.ZAPI_TOKEN}/send-chat-state`;
-    await axios.post(
-      urlDigitando,
-      { phone: telefone, chatState: "TYPING" },
-      { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
-    );
-    // Aguarda entre 2 e 4 segundos simulando digitação humana
-    const tempoDelay = Math.floor(Math.random() * 2000) + 2000;
-    await delay(tempoDelay);
-  } catch (e) {
-    // Se falhar, apenas aguarda o delay sem o indicador
-    const tempoDelay = Math.floor(Math.random() * 2000) + 2000;
-    await delay(tempoDelay);
-  }
 }
 
 // ──────────────────────────────────────────────
@@ -298,32 +368,52 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`[${new Date().toLocaleTimeString("pt-BR")}] De ${telefone}: ${mensagem}`);
 
-    // Filtro de palavrões
+    // 1. Cliente está no fluxo de evento corporativo?
+    if (estaNoFluxoEvento(telefone)) {
+      await processarFluxoEvento(telefone, mensagem);
+      return res.status(200).json({ ok: true });
+    }
+
+    // 2. Filtro de palavrões
     if (contemPalavroes(mensagem)) {
-      await simularDigitando(telefone);
+      await delay(2000);
       await enviarMensagem(telefone, "Ei, vamos manter o papo na boa! 😊 Posso te ajudar com cardápio, reservas ou qualquer dúvida sobre o Soul Botequim.");
       return res.status(200).json({ ok: true });
     }
 
-    // Encaminhar para humano
+    // 3. Quer falar com humano?
     if (querFalarComHumano(mensagem)) {
-      await simularDigitando(telefone);
+      await delay(2000);
       await enviarMensagem(telefone, "Claro! Vou chamar o Dourado pra te atender pessoalmente. Um segundo! 🙌");
-      await enviarMensagem(
-        CONFIG.NUMERO_DOURADO,
-        `🔔 *Soul Bot — Atendimento Humano*\n\nO cliente *${telefone}* quer falar com um atendente.\n\nÚltima mensagem: "${mensagem}"`
+      await enviarMensagem(CONFIG.NUMERO_DOURADO,
+        `🔔 *Soul Bot — Atendimento Humano*\n\nCliente *${telefone}* quer falar com atendente.\n\nÚltima mensagem: "${mensagem}"`
       );
       return res.status(200).json({ ok: true });
     }
 
-    // Simular digitação antes de responder
-    await simularDigitando(telefone);
+    // 4. Quer evento corporativo?
+    if (querEventoCorporativo(mensagem)) {
+      iniciarFluxoEvento(telefone);
+      await delay(2000);
+      await enviarMensagem(telefone,
+        `Que ótimo! Adoramos receber empresas aqui no Soul! 🎉\n\nVou precisar de algumas informações para montar o pacote ideal pra vocês.\n\n${ETAPAS_EVENTO[0].pergunta}`
+      );
+      return res.status(200).json({ ok: true });
+    }
 
-    // Gerar resposta com Claude
+    // 5. Quer recomendação de drink?
+    if (querRecomendacaoDrink(mensagem)) {
+      await delay(2000);
+      await enviarMensagem(telefone, "Boa! Vou te ajudar a escolher o drink perfeito! 🍹\n\nMe conta: você tá afim de algo *refrescante*, *forte*, *clássico*, *tropical/brasileiro* ou quer algo *diferente e autoral*?");
+      return res.status(200).json({ ok: true });
+    }
+
+    // 6. Resposta padrão com Claude
+    await delay(2000);
     const resposta = await chamarClaude(telefone, mensagem);
     console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Resposta: ${resposta.substring(0, 80)}...`);
-
     await enviarMensagem(telefone, resposta);
+
     res.status(200).json({ ok: true });
 
   } catch (error) {
@@ -339,6 +429,7 @@ app.get("/", (req, res) => {
   res.json({
     status: "🍺 Soul Botequim — Soul online!",
     conversasAtivas: Object.keys(memoriaGlobal).length,
+    eventosCapturados: Object.keys(eventosCapturados).length,
     horario: getStatusHorario(),
   });
 });
