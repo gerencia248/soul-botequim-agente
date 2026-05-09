@@ -251,16 +251,24 @@ async function enviarMensagem(telefone, texto) {
 }
 
 // ──────────────────────────────────────────────
-//  FUNÇÃO: Simular digitação
+//  FUNÇÃO: Simular digitação via Z-API
 // ──────────────────────────────────────────────
 async function simularDigitando(telefone) {
   try {
-    const url = `https://api.z-api.io/instances/${CONFIG.ZAPI_INSTANCE_ID}/token/${CONFIG.ZAPI_TOKEN}/send-text`;
+    // Ativa o indicador "digitando..." na Z-API
+    const urlDigitando = `https://api.z-api.io/instances/${CONFIG.ZAPI_INSTANCE_ID}/token/${CONFIG.ZAPI_TOKEN}/send-chat-state`;
+    await axios.post(
+      urlDigitando,
+      { phone: telefone, chatState: "TYPING" },
+      { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
+    );
     // Aguarda entre 2 e 4 segundos simulando digitação humana
     const tempoDelay = Math.floor(Math.random() * 2000) + 2000;
     await delay(tempoDelay);
   } catch (e) {
-    // Ignora erro no delay
+    // Se falhar, apenas aguarda o delay sem o indicador
+    const tempoDelay = Math.floor(Math.random() * 2000) + 2000;
+    await delay(tempoDelay);
   }
 }
 
