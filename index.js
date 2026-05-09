@@ -29,7 +29,6 @@ function jaProcessou(msgId) {
   if (!msgId) return false;
   if (mensagensProcessadas.has(msgId)) return true;
   mensagensProcessadas.add(msgId);
-  // Limpar IDs antigos a cada 1000 mensagens para não vazar memória
   if (mensagensProcessadas.size > 1000) {
     const primeiro = mensagensProcessadas.values().next().value;
     mensagensProcessadas.delete(primeiro);
@@ -38,20 +37,88 @@ function jaProcessou(msgId) {
 }
 
 // ──────────────────────────────────────────────
+//  HORÁRIO INTELIGENTE
+//  Verifica se o bar está aberto agora (fuso horário de São Paulo)
+// ──────────────────────────────────────────────
+function getStatusHorario() {
+  const agora = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
+  const data = new Date(agora);
+  const diaSemana = data.getDay(); // 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sab
+  const hora = data.getHours();
+  const minutos = data.getMinutes();
+  const horaDecimal = hora + minutos / 60;
+
+  // Segunda-feira: fechado
+  if (diaSemana === 1) {
+    return { aberto: false, mensagem: "Estamos fechados hoje (segunda-feira). Voltamos terça a partir das 16h! 🍺" };
+  }
+
+  // Terça a Quinta: 16h às 00h
+  if (diaSemana >= 2 && diaSemana <= 4) {
+    if (horaDecimal >= 16 && horaDecimal < 24) {
+      return { aberto: true, mensagem: "Estamos abertos agora! Vem nos visitar 🍻" };
+    } else {
+      return { aberto: false, mensagem: "Estamos fechados agora. Hoje abrimos às 16h! Até já 🍺" };
+    }
+  }
+
+  // Sexta e Sábado: 12h às 00h
+  if (diaSemana === 5 || diaSemana === 6) {
+    if (horaDecimal >= 12 && horaDecimal < 24) {
+      return { aberto: true, mensagem: "Estamos abertos agora! Vem nos visitar 🍻" };
+    } else {
+      return { aberto: false, mensagem: "Estamos fechados agora. Hoje abrimos às 12h! Até já 🍺" };
+    }
+  }
+
+  // Domingo: 12h às 21h
+  if (diaSemana === 0) {
+    if (horaDecimal >= 12 && horaDecimal < 21) {
+      return { aberto: true, mensagem: "Estamos abertos agora! Vem nos visitar 🍻" };
+    } else {
+      return { aberto: false, mensagem: "Estamos fechados agora. Aos domingos abrimos às 12h e fechamos às 21h! 🍺" };
+    }
+  }
+
+  return { aberto: false, mensagem: "Estamos fechados no momento." };
+}
+
+// ──────────────────────────────────────────────
 //  SYSTEM PROMPT DO AGENTE SOUL BOTEQUIM
 // ──────────────────────────────────────────────
-const SYSTEM_PROMPT = `Você é o atendente virtual do Soul Botequim, um botequim descolado e acolhedor no coração do Brooklin, São Paulo. Seu nome é Soul. Você fala de forma descontraída, usa emojis com moderação, gírias leves e tem o jeito simpático de um garçom que conhece cada cliente pelo nome.
+function getSYSTEM_PROMPT() {
+  const status = getStatusHorario();
+  const horarioInfo = status.aberto
+    ? "O bar está ABERTO agora. Seja acolhedor e convide o cliente a vir!"
+    : `O bar está FECHADO agora. Informe gentilmente: "${status.mensagem}"`;
+
+  return `Você é Soul, o atendente do Soul Botequim, um botequim descolado e acolhedor no coração do Brooklin, São Paulo. Você fala de forma descontraída, usa emojis com moderação, gírias leves e tem o jeito simpático de um garçom que conhece cada cliente pelo nome.
+
+IMPORTANTE — IDENTIDADE:
+- Você é o atendente Soul, um humano que trabalha no bar
+- NUNCA diga que é robô, IA, assistente virtual, chatbot ou qualquer coisa do tipo
+- Se perguntarem se você é humano ou robô, diga naturalmente que é o atendente do Soul Botequim
+- Mantenha sempre o personagem de garçom humano chamado Soul
+
+HORÁRIO ATUAL:
+${horarioInfo}
+
+HORÁRIOS DE FUNCIONAMENTO:
+- Ter a Qui: 16h–00h
+- Sex e Sáb: 12h–00h
+- Dom: 12h–21h
+- Segunda-feira: fechado
 
 INFORMAÇÕES DO BAR:
 - Nome: Soul Botequim
 - Endereço: Avenida Padre Antônio José dos Santos, 812 — Brooklin, São Paulo (no coração do Brooklin)
 - WhatsApp/Tel: (11) 95498-7240
 - Instagram: @soulbotequim
-- Horários: Ter a Qui 16h–00h | Sex e Sáb 12h–00h | Dom 12h–21h
 - Gerente: Dourado
 - Pet friendly — pode trazer seu bichinho!
 - Havaianas liberadas, calçada friendly
 - Temos área externa na calçada
+- Temos acesso para cadeirantes
 - Wi-Fi disponível para clientes
 - Sem couvert artístico
 - Taxa de rolha: R$70
@@ -121,20 +188,22 @@ COMO AGIR:
 - Seja descontraído, use emojis com moderação
 - Mantenha respostas curtas e objetivas no estilo WhatsApp (máximo 3-4 parágrafos curtos)
 - Nunca invente preços ou itens fora do cardápio acima
-- Para reservas, direcione o cliente diretamente para: https://widget.getinapp.com.br/d6NZKJ6V
+- Para reservas, direcione o cliente para: https://widget.getinapp.com.br/d6NZKJ6V
 - Para programação de música ao vivo e DJ, direcione para o Instagram @soulbotequim
-- Se não souber algo, oriente o cliente a ligar: (11) 95498-7240 ou visitar: Av. Padre Antônio José dos Santos, 812
-- Quando perguntarem sobre estacionamento/valet, informe que não temos valet mas há vários lugares para estacionar no entorno do bar
+- Se não souber algo, oriente a ligar: (11) 95498-7240
+- Quando perguntarem sobre acessibilidade ou cadeirantes, informe que temos acesso para cadeirantes
+- Quando perguntarem sobre estacionamento/valet, informe que não temos valet mas há vários lugares no entorno
 - Quando perguntarem sobre couvert, informe que não cobramos couvert artístico
 - Quando perguntarem sobre rolha, informe que a taxa é de R$70
 - Quando perguntarem sobre pets, informe que somos pet friendly e tem área externa na calçada
-- Quando perguntarem sobre aniversário, informe que o aniversariante ganha 1 drink ou 1 chopp como cortesia, e que pode trazer somente bolo (salgados e docinhos não são permitidos)
-- Quando perguntarem sobre cerveja, informe que trabalhamos somente com chopp artesanal, latas e garrafas de cervejas artesanais
-- Quando perguntarem sobre pagamento, informe: cartão de crédito (sem parcelamento), débito, Pix, dinheiro e American Express. Não aceitamos voucher, vale-alimentação ou derivados
-- Quando perguntarem sobre grupos, informe que aceitamos grupos grandes com espaço reservado e trabalhamos com comanda individual
+- Quando perguntarem sobre aniversário, informe que o aniversariante ganha 1 drink ou 1 chopp como cortesia e pode trazer somente bolo
+- Quando perguntarem sobre cerveja, informe que trabalhamos somente com chopp artesanal, latas e garrafas artesanais
+- Quando perguntarem sobre pagamento, informe: crédito (sem parcelamento), débito, Pix, dinheiro e Amex. Sem voucher ou vale-alimentação
+- Quando perguntarem sobre grupos, informe que aceitamos grupos grandes com espaço reservado e comanda individual
 - Quando perguntarem sobre Wi-Fi, informe que temos Wi-Fi disponível
 - Quando perguntarem sobre happy hour, informe que não temos happy hour
-- Quando perguntarem sobre o drink mais pedido ou recomendação, sugira o Fitzgerald (Gin, suco de limão siciliano, xarope simples e aromatic bitters) R$39 — o queridinho da casa!`;
+- Quando perguntarem sobre o drink mais pedido, sugira o Fitzgerald R$39 — o queridinho da casa!`;
+}
 
 // ──────────────────────────────────────────────
 //  MEMÓRIA DE CONVERSAS (em memória, por sessão)
@@ -168,7 +237,7 @@ async function chamarClaude(telefone, mensagemUsuario) {
     {
       model: "claude-sonnet-4-5",
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      system: getSYSTEM_PROMPT(),
       messages: historico,
     },
     {
@@ -193,10 +262,7 @@ async function enviarMensagem(telefone, texto) {
 
   await axios.post(
     url,
-    {
-      phone: telefone,
-      message: texto,
-    },
+    { phone: telefone, message: texto },
     {
       headers: {
         "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN,
@@ -213,15 +279,11 @@ app.post("/webhook", async (req, res) => {
   try {
     const body = req.body;
 
-    // Ignorar mensagens enviadas pelo próprio bot
-    if (body.fromMe) {
-      return res.status(200).json({ ok: true });
-    }
+    // Ignorar mensagens do próprio bot
+    if (body.fromMe) return res.status(200).json({ ok: true });
 
     // Ignorar grupos
-    if (body.isGroup) {
-      return res.status(200).json({ ok: true });
-    }
+    if (body.isGroup) return res.status(200).json({ ok: true });
 
     // Ignorar eventos que não sejam mensagens recebidas
     if (body.type && body.type !== "ReceivedCallback") {
@@ -231,14 +293,14 @@ app.post("/webhook", async (req, res) => {
     // Ignorar mensagens duplicadas pelo ID
     const msgId = body.messageId || body.id;
     if (jaProcessou(msgId)) {
-      console.log(`[DUPLICADA] Mensagem ${msgId} já processada, ignorando.`);
+      console.log(`[DUPLICADA] Mensagem ${msgId} ignorada.`);
       return res.status(200).json({ ok: true });
     }
 
     const telefone = body.phone;
     const mensagem = body.text?.message || body.text;
 
-    if (!telefone || !mensagem) {
+    if (!telefone || !mensagem || typeof mensagem !== "string" || mensagem.trim() === "") {
       return res.status(200).json({ ok: true });
     }
 
@@ -246,7 +308,7 @@ app.post("/webhook", async (req, res) => {
 
     const resposta = await chamarClaude(telefone, mensagem);
 
-    console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Resposta para ${telefone}: ${resposta.substring(0, 80)}...`);
+    console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Resposta: ${resposta.substring(0, 80)}...`);
 
     await enviarMensagem(telefone, resposta);
 
@@ -264,6 +326,7 @@ app.get("/", (req, res) => {
   res.json({
     status: "Soul Botequim Agente IA — online!",
     conversasAtivas: conversas.size,
+    horario: getStatusHorario(),
   });
 });
 
