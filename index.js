@@ -20,6 +20,24 @@ const CONFIG = {
 };
 
 // ──────────────────────────────────────────────
+//  CONTROLE DE MENSAGENS JÁ PROCESSADAS
+//  Evita responder duas vezes para a mesma mensagem
+// ──────────────────────────────────────────────
+const mensagensProcessadas = new Set();
+
+function jaProcessou(msgId) {
+  if (!msgId) return false;
+  if (mensagensProcessadas.has(msgId)) return true;
+  mensagensProcessadas.add(msgId);
+  // Limpar IDs antigos a cada 1000 mensagens para não vazar memória
+  if (mensagensProcessadas.size > 1000) {
+    const primeiro = mensagensProcessadas.values().next().value;
+    mensagensProcessadas.delete(primeiro);
+  }
+  return false;
+}
+
+// ──────────────────────────────────────────────
 //  SYSTEM PROMPT DO AGENTE SOUL BOTEQUIM
 // ──────────────────────────────────────────────
 const SYSTEM_PROMPT = `Você é o atendente virtual do Soul Botequim, um botequim descolado e acolhedor no coração do Brooklin, São Paulo. Seu nome é Soul. Você fala de forma descontraída, usa emojis com moderação, gírias leves e tem o jeito simpático de um garçom que conhece cada cliente pelo nome.
@@ -205,8 +223,15 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // Ignorar eventos que não sejam mensagens de texto
-    if (!body.text || body.type !== "ReceivedCallback") {
+    // Ignorar eventos que não sejam mensagens recebidas
+    if (body.type && body.type !== "ReceivedCallback") {
+      return res.status(200).json({ ok: true });
+    }
+
+    // Ignorar mensagens duplicadas pelo ID
+    const msgId = body.messageId || body.id;
+    if (jaProcessou(msgId)) {
+      console.log(`[DUPLICADA] Mensagem ${msgId} já processada, ignorando.`);
       return res.status(200).json({ ok: true });
     }
 
