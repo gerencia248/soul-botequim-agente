@@ -125,6 +125,12 @@ function querEventoCorporativo(t) {
     "comemoração empresa","evento para grupo","reserva para empresa"].some(g => t.toLowerCase().includes(g));
 }
 
+function perguntaSobreHorario(t) {
+  return ["que horas fecha","que horas abre","qual horario","qual o horário","horário de hoje",
+    "fecha hoje","abre hoje","que horas","funcionamento","aberto agora","fechado agora"
+  ].some(g => t.toLowerCase().includes(g));
+}
+
 function querRecomendacaoDrink(t) {
   return ["me indica","me recomenda","qual drink","o que você sugere","o que me recomenda",
     "não sei o que pedir","nao sei o que pedir","me sugere um drink","qual é o melhor",
@@ -167,13 +173,14 @@ function getSYSTEM_PROMPT() {
     "- Você é atendente de bar, NÃO terapeuta ou conselheiro\n" +
     "- Se o cliente falar de tristeza ou assuntos pessoais, responda com empatia BREVEMENTE e redirecione para o bar\n" +
     "- NUNCA invente informações que não estão neste prompt\n\n" +
-    "HORÁRIO ATUAL:\n" +
+    "HORÁRIO ATUAL (USE SEMPRE ESTA INFORMAÇÃO, IGNORE QUALQUER CONTEXTO ANTERIOR):\n" +
     getTextoHorario() + "\n\n" +
-    "HORÁRIOS DE FUNCIONAMENTO (NUNCA informe horários diferentes destes!):\n" +
+    "HORÁRIOS DE FUNCIONAMENTO (SEMPRE CONSULTE ISTO ANTES DE RESPONDER):\n" +
     "- Terça, Quarta, Quinta: abre às 16h e fecha à meia-noite (00h)\n" +
     "- Sexta e Sábado: abre às 12h e fecha à meia-noite (00h)\n" +
-    "- DOMINGO: abre às 12h e fecha às 21h — NÃO vai até meia-noite!\n" +
-    "- Segunda-feira: FECHADO o dia todo\n\n" +
+    "- DOMINGO: abre às 12h e fecha às 21h — NUNCA diga meia-noite no domingo!\n" +
+    "- Segunda-feira: FECHADO o dia todo\n" +
+    "- ATENÇÃO: Quando perguntarem sobre horário de hoje, consulte SEMPRE o HORÁRIO ATUAL acima\n\n" +
     "INFORMAÇÕES DO BAR:\n" +
     "- Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP\n" +
     "- Tel: (11) 95498-7240 | Instagram: @soulbotequim | Gerente: Dourado\n" +
@@ -279,6 +286,18 @@ app.post("/webhook", async (req, res) => {
     if (querEventoCorporativo(mensagem)) {
       iniciarFluxoEvento(telefone);
       await enviarMensagem(telefone, "Ótimo! Ficamos felizes em receber sua empresa no Soul Botequim!\n\nVou precisar de algumas informações para montar o melhor pacote para vocês.\n\n" + ETAPAS_EVENTO[0].pergunta);
+      return res.status(200).json({ ok: true });
+    }
+
+    if (perguntaSobreHorario(mensagem)) {
+      const s = getStatusHorario();
+      let respHorario = "";
+      if (s.aberto) {
+        respHorario = "Estamos abertos agora e fechamos às " + s.fechaAs + ". Pode vir! Se quiser garantir sua mesa, reserve pelo link: https://widget.getinapp.com.br/d6NZKJ6V";
+      } else {
+        respHorario = "Estamos fechados no momento. Próxima abertura: " + s.proximaAbertura + ". Aproveite para fazer sua reserva: https://widget.getinapp.com.br/d6NZKJ6V";
+      }
+      await enviarMensagem(telefone, respHorario);
       return res.status(200).json({ ok: true });
     }
 
