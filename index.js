@@ -337,6 +337,7 @@ async function chamarClaude(telefone, mensagemUsuario) {
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
+      timeout: 30000, // 30 segundos de timeout
     }
   );
 
@@ -391,13 +392,13 @@ app.post("/webhook", async (req, res) => {
 
     // 2. Filtro de palavrões
     if (contemPalavroes(mensagem)) {
-      await enviarMensagem(telefone, "Ei, vamos manter o papo na boa! 😊 Posso te ajudar com cardápio, reservas ou qualquer dúvida sobre o Soul Botequim.");
+      await enviarMensagem(telefone, "Por favor, vamos manter a conversa respeitosa. 😊 Estou aqui para ajudar com cardápio, reservas ou qualquer dúvida sobre o Soul Botequim.");
       return res.status(200).json({ ok: true });
     }
 
     // 3. Quer falar com humano?
     if (querFalarComHumano(mensagem)) {
-      await enviarMensagem(telefone, "Claro! Vou chamar o Dourado pra te atender pessoalmente. Um segundo! 🙌");
+      await enviarMensagem(telefone, "Claro! Vou acionar o Dourado para te atender pessoalmente. Um momento! 🙌");
       await enviarMensagem(CONFIG.NUMERO_DOURADO,
         `🔔 *Soul Bot — Atendimento Humano*\n\nCliente *${telefone}* quer falar com atendente.\n\nÚltima mensagem: "${mensagem}"`
       );
@@ -408,14 +409,14 @@ app.post("/webhook", async (req, res) => {
     if (querEventoCorporativo(mensagem)) {
       iniciarFluxoEvento(telefone);
       await enviarMensagem(telefone,
-        `Que ótimo! Adoramos receber empresas aqui no Soul! 🎉\n\nVou precisar de algumas informações para montar o pacote ideal pra vocês.\n\n${ETAPAS_EVENTO[0].pergunta}`
+        `Ótimo! Ficamos felizes em receber sua empresa no Soul Botequim! 🎉\n\nVou precisar de algumas informações para montar o melhor pacote para vocês.\n\n${ETAPAS_EVENTO[0].pergunta}`
       );
       return res.status(200).json({ ok: true });
     }
 
     // 5. Quer recomendação de drink?
     if (querRecomendacaoDrink(mensagem)) {
-      await enviarMensagem(telefone, "Boa! Vou te ajudar a escolher o drink perfeito! 🍹\n\nMe conta: você tá afim de algo *refrescante*, *forte*, *clássico*, *tropical/brasileiro* ou quer algo *diferente e autoral*?");
+      await enviarMensagem(telefone, "Com prazer! Vou te ajudar a escolher o drink ideal. 🍹\n\nMe conta: você prefere algo *refrescante*, *forte*, *clássico*, *tropical/brasileiro* ou algo *diferente e autoral*?");
       return res.status(200).json({ ok: true });
     }
 
@@ -428,6 +429,11 @@ app.post("/webhook", async (req, res) => {
 
   } catch (error) {
     console.error("Erro no webhook:", error.response?.data || error.message);
+    // Tenta avisar o cliente que houve um problema
+    try {
+      const tel = req.body?.phone;
+      if (tel) await enviarMensagem(tel, "Desculpe, tive um problema técnico. Por favor, tente novamente em instantes ou ligue: (11) 95498-7240.");
+    } catch (e) { /* ignora */ }
     res.status(500).json({ erro: error.message });
   }
 });
