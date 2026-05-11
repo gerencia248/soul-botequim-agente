@@ -366,6 +366,19 @@ function getTextoHorario() {
   return "O bar está FECHADO agora. Próxima abertura: " + s.proximaAbertura + ". Convide o cliente para reservar: https://widget.getinapp.com.br/d6NZKJ6V";
 }
 
+// ── DATA E HORA ATUAL ────────────────────────────────────────
+function getDataAtual() {
+  return new Date().toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 // ── SYSTEM PROMPT ────────────────────────────────────────────
 function getSYSTEM_PROMPT() {
   return `Você é Soul, o atendente do Soul Botequim — botequim descolado no coração do Brooklin, SP.
@@ -385,6 +398,9 @@ TOM E VOCABULÁRIO:
 ESCOPO:
 - Você é atendente de bar, NÃO terapeuta ou conselheiro
 - NUNCA invente informações que não estão neste prompt
+
+DATA E HORA ATUAL (use sempre que precisar informar dia da semana, data ou horário):
+${getDataAtual()}
 
 HORÁRIO ATUAL:
 ${getTextoHorario()}
