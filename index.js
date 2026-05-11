@@ -414,7 +414,7 @@ HORÁRIOS DE FUNCIONAMENTO:
 INFORMAÇÕES DO BAR:
 - Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP
 - Tel: (11) 95498-7240 | Instagram: @soulbotequim | Gerente: Dourado
-- Pet friendly | Área externa | Acesso para cadeirantes | Wi-Fi
+- Pet friendly | Área externa | Acesso para cadeirantes | Wi-Fi | Banheiro adaptado para cadeirantes
 - Sem couvert | Taxa de rolha R$70 | Sem happy hour | Comanda individual
 - Música: Jazz, Blues e Brasilidades — programação no Instagram @soulbotequim
 - Drink mais famoso: Fitzgerald ⭐
