@@ -420,10 +420,14 @@ INFORMAÇÕES DO BAR:
 - Drink mais famoso: Fitzgerald ⭐
 - Reservas: https://widget.getinapp.com.br/d6NZKJ6V
 - Sem valet — estacionamentos no entorno
-- Aniversariantes: 1 drink ou chopp de cortesia | Pode trazer somente bolo
-- Cervejas: somente chopp artesanal, latas e garrafas artesanais
+- Aniversariante do dia: 1 drink ou chopp de cortesia ANTES do pagamento da conta (somente para o aniversariante do dia, não para acompanhantes) | Pode trazer somente bolo
+- Não disponibilizamos barril de chopp para aniversário ou comemorações — somente o chopp que está nos bicos
+- Cervejas: somente chopp artesanal, latas e garrafas artesanais | Temos cerveja zero alcoólico e sem glúten
 - Sem voucher/vale-alimentação
 - Pagamento: crédito (sem parcelamento), débito, Pix, dinheiro, Amex
+- Temos projetor e televisão | Transmitimos jogos de futebol e outros esportes
+- Temos opções veganas no cardápio
+- Não temos petisco para animais (pet friendly apenas para a presença dos pets)
 
 DRINKS AUTORAIS: Corsário, Dama da Noite, Carcarah, Amarelo Manga, Jacira, Caju Amigo, Macunaíma, Soul Punch, Bitter Giuseppe
 DRINKS CLÁSSICOS: Fitzgerald, Negroni, Mojito, Caipirinha, El Diablo, Hibiscus Margarita, Aperol Spritz
