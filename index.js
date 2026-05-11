@@ -1,12 +1,11 @@
 // ============================================================
 //  Soul Botequim — Agente Soul via WhatsApp (Z-API + Claude)
-//  Servidor Node.js (Express)
+//  Servidor Node.js (Express) + Redis
 // ============================================================
 
 const express = require("express");
 const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
+const Redis = require("ioredis");
 const app = express();
 app.use(express.json());
 
@@ -19,24 +18,37 @@ const CONFIG = {
   NUMERO_DOURADO: "5511954657178",
 };
 
-// ── MEMÓRIA PERSISTENTE ──────────────────────────────────────
-const ARQUIVO_MEMORIA = path.join("/tmp", "soul_memoria.json");
-const ARQUIVO_EVENTOS = path.join("/tmp", "soul_eventos.json");
+// ── REDIS ────────────────────────────────────────────────────
+const redis = new Redis(process.env.REDIS_URL);
+redis.on("connect", () => console.log("✅ Redis conectado!"));
+redis.on("error", (e) => console.error("❌ Redis erro:", e.message));
 
-function carregarArquivo(arquivo) {
+// ── MEMÓRIA PERSISTENTE (Redis) ──────────────────────────────
+async function carregarMemoria(telefone) {
   try {
-    if (fs.existsSync(arquivo)) return JSON.parse(fs.readFileSync(arquivo, "utf8"));
-  } catch (e) { console.error("Erro ao carregar:", e.message); }
-  return {};
+    const val = await redis.get("memoria:" + telefone);
+    return val ? JSON.parse(val) : [];
+  } catch (e) { console.error("Erro ao carregar memória:", e.message); return []; }
 }
 
-function salvarArquivo(arquivo, dados) {
-  try { fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2), "utf8"); }
-  catch (e) { console.error("Erro ao salvar:", e.message); }
+async function salvarMemoria(telefone, historico) {
+  try {
+    await redis.set("memoria:" + telefone, JSON.stringify(historico));
+  } catch (e) { console.error("Erro ao salvar memória:", e.message); }
 }
 
-const memoriaGlobal = carregarArquivo(ARQUIVO_MEMORIA);
-const eventosCapturados = carregarArquivo(ARQUIVO_EVENTOS);
+async function carregarEventos() {
+  try {
+    const val = await redis.get("eventos");
+    return val ? JSON.parse(val) : {};
+  } catch (e) { return {}; }
+}
+
+async function salvarEventos(eventos) {
+  try {
+    await redis.set("eventos", JSON.stringify(eventos));
+  } catch (e) { console.error("Erro ao salvar eventos:", e.message); }
+}
 
 // ── FLUXO DE EVENTOS CORPORATIVOS ───────────────────────────
 const fluxoEventos = {};
@@ -70,8 +82,9 @@ async function processarFluxoEvento(telefone, mensagem) {
 
   const d = fluxo.dados;
   const id = "evento_" + Date.now();
-  eventosCapturados[id] = { telefone, ...d, criadoEm: new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) };
-  salvarArquivo(ARQUIVO_EVENTOS, eventosCapturados);
+  const eventos = await carregarEventos();
+  eventos[id] = { telefone, ...d, criadoEm: new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) };
+  await salvarEventos(eventos);
   delete fluxoEventos[telefone];
 
   await enviarMensagem(telefone, "Perfeito! Recebi todas as informações. Nosso gerente Dourado entrará em contato em breve para montar o pacote ideal. Qualquer dúvida, estou à disposição!");
@@ -88,26 +101,24 @@ async function processarFluxoEvento(telefone, mensagem) {
 }
 
 // ── MEMÓRIA DE CONVERSAS ─────────────────────────────────────
-function getHistorico(telefone) {
-  if (!memoriaGlobal[telefone]) memoriaGlobal[telefone] = [];
-  return memoriaGlobal[telefone];
+async function getHistorico(telefone) {
+  return await carregarMemoria(telefone);
 }
 
-function adicionarMensagem(telefone, role, content) {
-  const h = getHistorico(telefone);
+async function adicionarMensagem(telefone, role, content) {
+  const h = await carregarMemoria(telefone);
   h.push({ role, content });
   if (h.length > 20) h.splice(0, h.length - 20);
-  salvarArquivo(ARQUIVO_MEMORIA, memoriaGlobal);
+  await salvarMemoria(telefone, h);
 }
 
 // ── CONTROLE DE DUPLICATAS ───────────────────────────────────
-const mensagensProcessadas = new Set();
-function jaProcessou(msgId) {
+async function jaProcessou(msgId) {
   if (!msgId) return false;
-  if (mensagensProcessadas.has(msgId)) return true;
-  mensagensProcessadas.add(msgId);
-  if (mensagensProcessadas.size > 1000) mensagensProcessadas.delete(mensagensProcessadas.values().next().value);
-  return false;
+  try {
+    const resultado = await redis.set("msg:" + msgId, "1", "EX", 86400, "NX");
+    return resultado === null; // null = já existia
+  } catch (e) { return false; }
 }
 
 // ── FILTROS ──────────────────────────────────────────────────
@@ -141,7 +152,7 @@ function querRecomendacaoDrink(t) {
 function getStatusHorario() {
   const agora = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
   const data = new Date(agora);
-  const dia = data.getDay(); // 0=Dom, 1=Seg, 2=Ter ... 6=Sab
+  const dia = data.getDay();
   const h = data.getHours() + data.getMinutes() / 60;
 
   if (dia === 1) return { aberto: false, fechaAs: null, proximaAbertura: "terça-feira às 16h" };
@@ -234,15 +245,15 @@ function getSYSTEM_PROMPT() {
 
 // ── CHAMAR CLAUDE ────────────────────────────────────────────
 async function chamarClaude(telefone, mensagemUsuario) {
-  adicionarMensagem(telefone, "user", mensagemUsuario);
-  const historico = getHistorico(telefone);
+  await adicionarMensagem(telefone, "user", mensagemUsuario);
+  const historico = await getHistorico(telefone);
   const response = await axios.post(
     "https://api.anthropic.com/v1/messages",
     { model: "claude-sonnet-4-5", max_tokens: 1024, system: getSYSTEM_PROMPT(), messages: historico },
     { headers: { "x-api-key": CONFIG.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 30000 }
   );
   const resposta = response.data.content[0].text;
-  adicionarMensagem(telefone, "assistant", resposta);
+  await adicionarMensagem(telefone, "assistant", resposta);
   return resposta;
 }
 
@@ -262,7 +273,7 @@ app.post("/webhook", async (req, res) => {
     if (body.type && body.type !== "ReceivedCallback") return res.status(200).json({ ok: true });
 
     const msgId = body.messageId || body.id;
-    if (jaProcessou(msgId)) { console.log("[DUPLICADA] " + msgId); return res.status(200).json({ ok: true }); }
+    if (await jaProcessou(msgId)) { console.log("[DUPLICADA] " + msgId); return res.status(200).json({ ok: true }); }
 
     const telefone = body.phone;
     const mensagem = body.text && body.text.message ? body.text.message : body.text;
@@ -322,8 +333,8 @@ app.post("/webhook", async (req, res) => {
 });
 
 // ── HEALTH CHECK ─────────────────────────────────────────────
-app.get("/", (req, res) => {
-  res.json({ status: "Soul Botequim online!", conversas: Object.keys(memoriaGlobal).length, horario: getStatusHorario() });
+app.get("/", async (req, res) => {
+  res.json({ status: "Soul Botequim online!", horario: getStatusHorario() });
 });
 
 app.listen(CONFIG.PORT, () => {
