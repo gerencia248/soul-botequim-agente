@@ -473,17 +473,30 @@ COMO AGIR:
 }
 
 // ── CHAMAR CLAUDE ────────────────────────────────────────────
-async function chamarClaude(telefone, mensagemUsuario) {
+async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   await adicionarMensagem(telefone, "user", mensagemUsuario);
   const historico = await getHistorico(telefone);
-  const response = await axios.post(
-    "https://api.anthropic.com/v1/messages",
-    { model: "claude-sonnet-4-5", max_tokens: 1024, system: getSYSTEM_PROMPT(), messages: historico },
-    { headers: { "x-api-key": CONFIG.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 30000 }
-  );
-  const resposta = response.data.content[0].text;
-  await adicionarMensagem(telefone, "assistant", resposta);
-  return resposta;
+  try {
+    const response = await axios.post(
+      "https://api.anthropic.com/v1/messages",
+      { model: "claude-sonnet-4-5", max_tokens: 1024, system: getSYSTEM_PROMPT(), messages: historico },
+      { headers: { "x-api-key": CONFIG.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 60000 }
+    );
+    const resposta = response.data.content[0].text;
+    await adicionarMensagem(telefone, "assistant", resposta);
+    return resposta;
+  } catch (err) {
+    if (tentativa < 3) {
+      console.log("[RETRY " + tentativa + "] Tentando novamente para " + telefone);
+      await new Promise(r => setTimeout(r, 2000 * tentativa));
+      // Remove a última mensagem duplicada antes de retentar
+      const h = await carregarMemoria(telefone);
+      h.pop();
+      await salvarMemoria(telefone, h);
+      return chamarClaude(telefone, mensagemUsuario, tentativa + 1);
+    }
+    throw err;
+  }
 }
 
 // ── ENVIAR MENSAGEM ──────────────────────────────────────────
