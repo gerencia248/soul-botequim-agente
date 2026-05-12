@@ -310,6 +310,26 @@ const CARDAPIO_DOSES = `🥃 *DOSES — Soul Botequim*
 🍸 *VODKA*
 • Absolut R$40`;
 
+// ── OPÇÕES VEGANAS E VEGETARIANAS ───────────────────────────
+const OPCOES_VEGANAS = `🌱 *OPÇÕES VEGANAS — Soul Botequim*
+
+• Chips Batata Doce R$30 — Colorido, sequinho e bem feito
+• Batata Frita R$42 — Com sal temperado da casa e maionese de leite*
+• Palmito Pupunha na Brasa R$65 — Com manteiga de alho, ervas e amêndoas torradas*
+• Legumes na Brasa R$70 — Com chimichurri e farofa de cebola
+• Quiabo na Brasa com Coalhada Fresca R$46*
+
+_*Consulte o garçom para adaptações_`;
+
+const OPCOES_VEGETARIANAS = `🥗 *OPÇÕES VEGETARIANAS — Soul Botequim*
+
+• Chips Batata Doce R$30 — Colorido, sequinho e bem feito
+• Batata Frita R$42 — Com sal temperado da casa e maionese de leite
+• Cogumelos R$48 — Salteados na manteiga de alho e ervas, ovo caipira frito e focaccia
+• Quiabo na Brasa com Coalhada Fresca R$46 — Quiabo grelhado, coalhado e páprica picante
+• Palmito Pupunha na Brasa R$65 — Com manteiga de alho, ervas e amêndoas torradas
+• Legumes na Brasa R$70 — Com chimichurri e farofa de cebola`;
+
 // ── FILTROS ──────────────────────────────────────────────────
 const palavroes = ["puta","merda","caralho","porra","viado","idiota","imbecil","cretino","otario","otário","fdp","arrombado","babaca"];
 function contemPalavroes(t) { return palavroes.some(p => t.toLowerCase().includes(p)); }
@@ -335,6 +355,12 @@ function querRecomendacaoDrink(t) {
   return ["me indica","me recomenda","qual drink","o que você sugere","o que me recomenda",
     "não sei o que pedir","nao sei o que pedir","me sugere um drink","qual é o melhor",
     "algo refrescante","algo forte","drink leve","drink especial"].some(g => t.toLowerCase().includes(g));
+}
+
+function querVeganoVegetariano(t) {
+  return ["vegano","vegana","vegetariano","vegetariana","sem carne","plant based","plant-based",
+    "opção vegana","opcao vegana","opção vegetariana","opcao vegetariana","não come carne",
+    "nao come carne","sem proteína animal","sem proteina animal"].some(g => t.toLowerCase().includes(g));
 }
 
 function querCardapio(t) {
@@ -528,6 +554,16 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(telefone, CARDAPIO_VINHOS);
         await enviarMensagem(telefone, CARDAPIO_DOSES);
         await enviarMensagem(telefone, CARDAPIO_COMIDAS);
+      }
+      return res.status(200).json({ ok: true });
+    }
+
+    if (querVeganoVegetariano(mensagem)) {
+      const txt = mensagem.toLowerCase();
+      if (["vegano","vegana","plant based","plant-based"].some(g => txt.includes(g))) {
+        await enviarMensagem(telefone, OPCOES_VEGANAS);
+      } else {
+        await enviarMensagem(telefone, OPCOES_VEGETARIANAS);
       }
       return res.status(200).json({ ok: true });
     }
