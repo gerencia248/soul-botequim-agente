@@ -373,23 +373,69 @@ function querCardapio(t) {
   return null;
 }
 
-// ── HORÁRIO INTELIGENTE ──────────────────────────────────────
+// ============================================================
+// CORREÇÃO 1 — getStatusHorario()
+// Problema original: madrugada (0h–4h) não era tratada como
+// extensão operacional do dia anterior. Sexta às 00h47 retornava
+// "fechado, abre hoje às 12h" mas o dia da semana ficava ambíguo
+// para o Claude. Agora diaOp/hOp tratam a madrugada corretamente.
+// ============================================================
 function getStatusHorario() {
   const agora = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
   const data = new Date(agora);
-  const dia = data.getDay();
+  const dia = data.getDay();  // 0=dom, 1=seg, 2=ter ... 6=sab
   const h = data.getHours() + data.getMinutes() / 60;
-  if (dia === 1) return { aberto: false, fechaAs: null, proximaAbertura: "terça-feira às 16h" };
-  if (dia >= 2 && dia <= 4) return h >= 16 && h < 24 ? { aberto: true, fechaAs: "00h (meia-noite)" } : { aberto: false, fechaAs: null, proximaAbertura: "hoje às 16h" };
-  if (dia === 5 || dia === 6) return h >= 12 && h < 24 ? { aberto: true, fechaAs: "00h (meia-noite)" } : { aberto: false, fechaAs: null, proximaAbertura: "hoje às 12h" };
-  if (dia === 0) return h >= 12 && h < 21 ? { aberto: true, fechaAs: "21h" } : { aberto: false, fechaAs: null, proximaAbertura: "próxima terça às 16h (segunda fechamos)" };
+
+  // Madrugada (0h–4h): operacionalmente ainda é o dia anterior
+  const diaOp = (h < 4) ? (dia === 0 ? 6 : dia - 1) : dia;
+  const hOp   = (h < 4) ? h + 24 : h;  // ex: 0h47 → 24.78h
+
+  // Segunda: fechado o dia todo
+  if (diaOp === 1) return { aberto: false, fechaAs: null, proximaAbertura: "terça-feira às 16h" };
+
+  // Terça, Quarta, Quinta: 16h–meia-noite
+  if (diaOp >= 2 && diaOp <= 4) {
+    if (hOp >= 16 && hOp < 28) return { aberto: true, fechaAs: "00h (meia-noite)" };
+    if (diaOp === 4) return { aberto: false, fechaAs: null, proximaAbertura: "sexta-feira às 12h" };
+    return { aberto: false, fechaAs: null, proximaAbertura: "hoje às 16h" };
+  }
+
+  // Sexta e Sábado: 12h–meia-noite
+  if (diaOp === 5 || diaOp === 6) {
+    if (hOp >= 12 && hOp < 28) return { aberto: true, fechaAs: "00h (meia-noite)" };
+    return {
+      aberto: false,
+      fechaAs: null,
+      proximaAbertura: diaOp === 6 ? "domingo às 12h" : "hoje às 12h"
+    };
+  }
+
+  // Domingo: 12h–21h
+  if (diaOp === 0) {
+    if (hOp >= 12 && hOp < 21) return { aberto: true, fechaAs: "21h" };
+    return { aberto: false, fechaAs: null, proximaAbertura: "terça-feira às 16h (segunda fechamos)" };
+  }
+
   return { aberto: false, fechaAs: null, proximaAbertura: "em breve" };
 }
 
+// ============================================================
+// CORREÇÃO 3 — getTextoHorario()
+// Agora inclui dia da semana e hora explícitos no texto,
+// eliminando qualquer ambiguidade para o Claude.
+// ============================================================
 function getTextoHorario() {
   const s = getStatusHorario();
-  if (s.aberto) return "O bar está ABERTO agora e fecha às " + s.fechaAs + ".";
-  return "O bar está FECHADO agora. Próxima abertura: " + s.proximaAbertura + ". Convide o cliente para reservar: https://widget.getinapp.com.br/d6NZKJ6V";
+  const dataAtual = new Date().toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  if (s.aberto) {
+    return `O bar está ABERTO agora (${dataAtual}) e fecha às ${s.fechaAs}.`;
+  }
+  return `O bar está FECHADO agora (${dataAtual}). Próxima abertura: ${s.proximaAbertura}. Convide o cliente para reservar: https://widget.getinapp.com.br/d6NZKJ6V`;
 }
 
 // ── DATA E HORA ATUAL ────────────────────────────────────────
@@ -472,15 +518,49 @@ COMO AGIR:
 - Quando fechado, convide para reservar`;
 }
 
-// ── CHAMAR CLAUDE ────────────────────────────────────────────
+// ============================================================
+// CORREÇÃO 2 — chamarClaude()
+// Problema original: o histórico de 20 mensagens no Redis tinha
+// peso maior que o system prompt atualizado, fazendo o Claude
+// usar contexto de data/hora de sessões anteriores.
+// Solução: injeta uma âncora temporal fixada no início de cada
+// chamada, antes do histórico, com data e horário atuais.
+// ============================================================
 async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   await adicionarMensagem(telefone, "user", mensagemUsuario);
   const historico = await getHistorico(telefone);
+
+  // Âncora temporal: par user/assistant pinado ANTES do histórico.
+  // Garante que o Claude nunca use data/hora de contexto antigo do Redis.
+  const mensagensComAncora = [
+    {
+      role: "user",
+      content: `[CONTEXTO DO SISTEMA — NÃO MENCIONAR NA RESPOSTA] Data e hora exatas agora: ${getDataAtual()}. Status do bar agora: ${getTextoHorario()}. Use SEMPRE estas informações ao responder sobre dia da semana, data ou horário de funcionamento. Nunca use datas ou dias de mensagens anteriores desta conversa.`
+    },
+    {
+      role: "assistant",
+      content: "Entendido. Vou usar apenas as informações de data, hora e status do bar fornecidas acima em todas as minhas respostas."
+    },
+    ...historico
+  ];
+
   try {
     const response = await axios.post(
       "https://api.anthropic.com/v1/messages",
-      { model: "claude-sonnet-4-5", max_tokens: 1024, system: getSYSTEM_PROMPT(), messages: historico },
-      { headers: { "x-api-key": CONFIG.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 60000 }
+      {
+        model: "claude-sonnet-4-5",
+        max_tokens: 1024,
+        system: getSYSTEM_PROMPT(),
+        messages: mensagensComAncora
+      },
+      {
+        headers: {
+          "x-api-key": CONFIG.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        timeout: 60000
+      }
     );
     const resposta = response.data.content[0].text;
     await adicionarMensagem(telefone, "assistant", resposta);
@@ -489,7 +569,6 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
     if (tentativa < 3) {
       console.log("[RETRY " + tentativa + "] Tentando novamente para " + telefone);
       await new Promise(r => setTimeout(r, 2000 * tentativa));
-      // Remove a última mensagem duplicada antes de retentar
       const h = await carregarMemoria(telefone);
       h.pop();
       await salvarMemoria(telefone, h);
