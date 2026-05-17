@@ -530,16 +530,20 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   await adicionarMensagem(telefone, "user", mensagemUsuario);
   const historico = await getHistorico(telefone);
 
-  // Âncora temporal: par user/assistant pinado ANTES do histórico.
-  // Garante que o Claude nunca use data/hora de contexto antigo do Redis.
+  // Ancora temporal blindada — injeta data/hora REAL antes de qualquer historico.
+  // REGRA ABSOLUTA: o Claude DEVE ignorar qualquer data/dia/hora que apareca
+  // no historico de mensagens anteriores e usar SOMENTE o valor abaixo.
+  const dataAgora = getDataAtual();
+  const statusAgora = getTextoHorario();
+
   const mensagensComAncora = [
     {
       role: "user",
-      content: `[CONTEXTO DO SISTEMA — NÃO MENCIONAR NA RESPOSTA] Data e hora exatas agora: ${getDataAtual()}. Status do bar agora: ${getTextoHorario()}. Use SEMPRE estas informações ao responder sobre dia da semana, data ou horário de funcionamento. Nunca use datas ou dias de mensagens anteriores desta conversa.`
+      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar."
     },
     {
       role: "assistant",
-      content: "Entendido. Vou usar apenas as informações de data, hora e status do bar fornecidas acima em todas as minhas respostas."
+      content: "Confirmado. Hoje e " + dataAgora + ". " + statusAgora + " Vou usar exclusivamente estas informacoes em todas as respostas sobre data e horario."
     },
     ...historico
   ];
@@ -623,9 +627,15 @@ app.post("/webhook", async (req, res) => {
 
     if (perguntaSobreHorario(mensagem)) {
       const s = getStatusHorario();
+      const dataAtual = new Date().toLocaleString("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        weekday: "long",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
       const resp = s.aberto
-        ? "Estamos abertos agora e fechamos às " + s.fechaAs + ". Pode vir! Reserve pelo link: https://widget.getinapp.com.br/d6NZKJ6V"
-        : "Estamos fechados no momento. Próxima abertura: " + s.proximaAbertura + ". Reserve: https://widget.getinapp.com.br/d6NZKJ6V";
+        ? `Sim, estamos *ABERTOS* agora! 😊\n\nHoje é ${dataAtual} e funcionamos até às ${s.fechaAs}.\n\nVem pro Soul! Reserve: https://widget.getinapp.com.br/d6NZKJ6V`
+        : `Agora estamos *FECHADOS*. 😔\n\nHoje é ${dataAtual}. Próxima abertura: ${s.proximaAbertura}.\n\nJá reserve sua mesa: https://widget.getinapp.com.br/d6NZKJ6V`;
       await enviarMensagem(telefone, resp);
       return res.status(200).json({ ok: true });
     }
@@ -682,10 +692,24 @@ app.post("/webhook", async (req, res) => {
 
 // ── HEALTH CHECK ─────────────────────────────────────────────
 app.get("/", async (req, res) => {
-  res.json({ status: "Soul Botequim online!", horario: getStatusHorario() });
+  res.json({ status: "Soul Botequim online!", horario: getStatusHorario(), dataAtual: getDataAtual(), textoHorario: getTextoHorario() });
 });
 
 app.listen(CONFIG.PORT, () => {
   console.log("\n🍺 Soul Botequim — Soul rodando na porta " + CONFIG.PORT);
   console.log("📡 Webhook: http://localhost:" + CONFIG.PORT + "/webhook\n");
+});
+
+// ── LIMPAR HISTÓRICO (use quando histórico Redis estiver corrompido) ──
+// Acesse: GET /limpar-historico?telefone=5511999999999
+app.get("/limpar-historico", async (req, res) => {
+  try {
+    const { telefone } = req.query;
+    if (!telefone) return res.status(400).json({ erro: "Informe o telefone" });
+    await redis.del("memoria:" + telefone);
+    console.log("[ADMIN] Historico limpo para " + telefone);
+    res.json({ ok: true, mensagem: "Historico de " + telefone + " limpo com sucesso." });
+  } catch (e) {
+    res.status(500).json({ erro: e.message });
+  }
 });
