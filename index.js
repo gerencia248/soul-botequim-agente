@@ -50,6 +50,65 @@ async function salvarEventos(eventos) {
   catch (e) { console.error("Erro ao salvar eventos:", e.message); }
 }
 
+// ── LEADS DE RESERVA (captura de intenção) ──────────────────
+// Salvamos sempre que o bot manda o link de reserva, com o que
+// conseguimos extrair da última mensagem do cliente (dia + pessoas).
+// status: "pendente" | "confirmado" | "perdido"
+async function salvarLead(telefone, dados) {
+  try {
+    const lead = {
+      telefone,
+      dia: dados.dia ?? null,
+      pessoas: dados.pessoas ?? null,
+      status: dados.status || "pendente",
+      criadoEm: dados.criadoEm || new Date().toISOString(),
+      lembreteEnviado: dados.lembreteEnviado || false,
+      lembreteEnviadoEm: dados.lembreteEnviadoEm || null,
+      confirmadoEm: dados.confirmadoEm || null,
+    };
+    await redis.set("lead:" + telefone, JSON.stringify(lead), "EX", 86400 * 7); // 7 dias
+    return lead;
+  } catch (e) { console.error("Erro ao salvar lead:", e.message); return null; }
+}
+async function obterLead(telefone) {
+  try {
+    const v = await redis.get("lead:" + telefone);
+    return v ? JSON.parse(v) : null;
+  } catch (e) { return null; }
+}
+async function listarLeads() {
+  try {
+    const keys = await redis.keys("lead:*");
+    const leads = [];
+    for (const k of keys) {
+      const v = await redis.get(k);
+      if (v) { try { leads.push(JSON.parse(v)); } catch (e) {} }
+    }
+    return leads.sort((a, b) => (b.criadoEm || "").localeCompare(a.criadoEm || ""));
+  } catch (e) { return []; }
+}
+
+// Extrai dia e quantidade de pessoas de uma mensagem livre.
+function extrairDadosReserva(texto) {
+  if (!texto) return { pessoas: null, dia: null };
+  const t = texto.toLowerCase();
+  const matchPessoas = t.match(/(\d+)\s*pessoa/);
+  const diasMap = ["hoje","amanhã","amanha","segunda","terça","terca","quarta","quinta","sexta","sábado","sabado","domingo"];
+  let dia = null;
+  for (const d of diasMap) { if (t.includes(d)) { dia = d; break; } }
+  return {
+    pessoas: matchPessoas ? parseInt(matchPessoas[1]) : null,
+    dia,
+  };
+}
+
+// Detecta quando o cliente confirma uma reserva já iniciada.
+function pareceConfirmacao(texto) {
+  if (!texto) return false;
+  const t = texto.toLowerCase();
+  return ["confirmei","confirmado","fiz a reserva","reservei","reserva feita","ta feito","tá feito","já confirmei","ja confirmei","ja reservei","já reservei"].some(p => t.includes(p));
+}
+
 // ── FLUXO DE EVENTOS CORPORATIVOS ───────────────────────────
 const fluxoEventos = {};
 const ETAPAS_EVENTO = [
@@ -714,9 +773,42 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
+    // ── CONFIRMAÇÃO DE RESERVA (atualiza lead pendente) ──
+    if (pareceConfirmacao(mensagem)) {
+      const lead = await obterLead(telefone);
+      if (lead && lead.status === "pendente") {
+        lead.status = "confirmado";
+        lead.confirmadoEm = new Date().toISOString();
+        await salvarLead(telefone, lead);
+        await enviarMensagem(telefone, "Show! Reserva confirmada por aqui. Te esperamos! 🍻");
+        await enviarMensagem(CONFIG.NUMERO_DOURADO,
+          "✅ *Reserva CONFIRMADA*\n📱 " + telefone +
+          "\n👥 " + (lead.pessoas || "?") + " pessoas" +
+          "\n📅 " + (lead.dia || "?")
+        );
+        return res.status(200).json({ ok: true });
+      }
+      // sem lead pendente: deixa o Claude responder normal
+    }
+
     const resposta = await chamarClaude(telefone, mensagem);
     console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] Resposta: " + resposta.substring(0, 80) + "...");
     await enviarMensagem(telefone, resposta);
+
+    // ── CAPTURA DE LEAD (se Claude mandou link de reserva) ──
+    if (resposta && resposta.includes("widget.getinapp.com.br")) {
+      try {
+        const leadExistente = await obterLead(telefone);
+        // evita duplicar lead se já tem um pendente recente
+        const aindaPendente = leadExistente && leadExistente.status === "pendente";
+        if (!aindaPendente) {
+          const dadosExtraidos = extrairDadosReserva(mensagem);
+          await salvarLead(telefone, { ...dadosExtraidos, status: "pendente" });
+          console.log("[LEAD] Capturado para " + telefone + ": " + JSON.stringify(dadosExtraidos));
+        }
+      } catch (e) { console.error("[LEAD] Erro ao capturar:", e.message); }
+    }
+
     res.status(200).json({ ok: true });
 
   } catch (error) {
@@ -737,6 +829,139 @@ app.get("/", async (req, res) => {
 app.listen(CONFIG.PORT, () => {
   console.log("\n🍺 Soul Botequim — Luz rodando na porta " + CONFIG.PORT);
   console.log("📡 Webhook: http://localhost:" + CONFIG.PORT + "/webhook\n");
+});
+
+// ── LEMBRETE AUTOMÁTICO DE RESERVA ───────────────────────────
+// A cada 10 min, percorre os leads pendentes. Para os criados há
+// mais de 30 min e menos de 4h sem lembrete enviado, manda 1 cutucada
+// pedindo confirmação. Roda apenas uma vez por lead.
+setInterval(async () => {
+  try {
+    const leads = await listarLeads();
+    const agora = Date.now();
+    for (const lead of leads) {
+      if (lead.status !== "pendente") continue;
+      if (lead.lembreteEnviado) continue;
+      const criadoMs = new Date(lead.criadoEm).getTime();
+      if (isNaN(criadoMs)) continue;
+      const idadeMin = (agora - criadoMs) / 60000;
+      if (idadeMin < 30 || idadeMin > 240) continue;
+      try {
+        await enviarMensagem(lead.telefone,
+          "Oi! Conseguiu confirmar a reserva pelo link? Se precisar de qualquer ajuda, é só me chamar por aqui."
+        );
+        lead.lembreteEnviado = true;
+        lead.lembreteEnviadoEm = new Date().toISOString();
+        await salvarLead(lead.telefone, lead);
+        console.log("[LEMBRETE] Enviado para " + lead.telefone);
+      } catch (e) {
+        console.error("[LEMBRETE] Falha ao enviar para " + lead.telefone + ":", e.message);
+      }
+    }
+  } catch (e) { console.error("[LEMBRETE] Loop:", e.message); }
+}, 10 * 60 * 1000);
+
+// Marca leads pendentes "perdidos" após 24h (limpeza diária)
+setInterval(async () => {
+  try {
+    const leads = await listarLeads();
+    const agora = Date.now();
+    for (const lead of leads) {
+      if (lead.status !== "pendente") continue;
+      const idadeH = (agora - new Date(lead.criadoEm).getTime()) / 3600000;
+      if (idadeH >= 24) {
+        lead.status = "perdido";
+        await salvarLead(lead.telefone, lead);
+        console.log("[LEAD] Marcado como perdido: " + lead.telefone);
+      }
+    }
+  } catch (e) { console.error("[LEAD-EXPIRE]:", e.message); }
+}, 60 * 60 * 1000); // 1x por hora
+
+// ── DASHBOARD DE LEADS (acesso restrito ao gerente) ─────────
+// Acesse: GET /dashboard?phone=5511954657178 (número do Dourado)
+app.get("/dashboard", async (req, res) => {
+  try {
+    const { phone } = req.query;
+    if (phone !== CONFIG.NUMERO_DOURADO) {
+      return res.status(403).send("Acesso negado. Use ?phone=NUMERO_DO_GERENTE");
+    }
+    const leads = await listarLeads();
+    const eventos = await carregarEventos();
+    const pendentes = leads.filter(l => l.status === "pendente");
+    const confirmados = leads.filter(l => l.status === "confirmado");
+    const perdidos = leads.filter(l => l.status === "perdido");
+    const taxa = leads.length > 0 ? (confirmados.length / leads.length * 100).toFixed(1) : "0";
+
+    const fmt = (iso) => iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+    const linhasLeads = leads.map(l => `
+      <tr>
+        <td>${esc(l.telefone)}</td>
+        <td>${esc(l.pessoas || "?")}</td>
+        <td>${esc(l.dia || "?")}</td>
+        <td><span class="status status-${esc(l.status)}">${esc(l.status)}</span></td>
+        <td>${fmt(l.criadoEm)}</td>
+        <td>${l.lembreteEnviado ? "✓" : "—"}</td>
+        <td>${fmt(l.confirmadoEm)}</td>
+      </tr>`).join("");
+
+    const linhasEventos = Object.entries(eventos).map(([id, e]) => `
+      <tr>
+        <td>${esc(e.nome)}</td>
+        <td>${esc(e.empresa)}</td>
+        <td>${esc(e.telefone)}</td>
+        <td>${esc(e.pessoas)}</td>
+        <td>${esc(e.data)}</td>
+        <td>${esc(e.tipo)}</td>
+        <td>${esc(e.orcamento)}</td>
+        <td>${esc(e.criadoEm)}</td>
+      </tr>`).join("");
+
+    res.send(`<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta http-equiv="refresh" content="60">
+<title>Soul Botequim — Painel</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; background: #1a1a1a; color: #eee; margin: 0; }
+  h1, h2 { color: #f5b800; }
+  h1 { margin: 0 0 8px; }
+  h2 { margin: 32px 0 12px; font-size: 18px; }
+  .sub { color: #888; font-size: 13px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 20px 0; }
+  .card { background: #2a2a2a; padding: 18px; border-radius: 10px; border: 1px solid #333; }
+  .card h3 { margin: 0 0 6px; color: #aaa; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .num { font-size: 32px; font-weight: 700; color: #f5b800; line-height: 1; }
+  table { width: 100%; border-collapse: collapse; background: #2a2a2a; border-radius: 8px; overflow: hidden; font-size: 14px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #333; }
+  th { background: #333; color: #f5b800; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+  tr:last-child td { border-bottom: none; }
+  .status { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .status-pendente { background: #ff9900; color: #000; }
+  .status-confirmado { background: #00cc66; color: #000; }
+  .status-perdido { background: #555; color: #ccc; }
+  .empty { padding: 30px; text-align: center; color: #666; }
+  .footer { color: #666; font-size: 12px; margin-top: 40px; text-align: center; }
+</style></head><body>
+<h1>🍻 Soul Botequim — Painel</h1>
+<div class="sub">Atualiza automaticamente a cada 60s · ${fmt(new Date().toISOString())}</div>
+<div class="stats">
+  <div class="card"><h3>Reservas pedidas</h3><div class="num">${leads.length}</div></div>
+  <div class="card"><h3>Confirmadas</h3><div class="num">${confirmados.length}</div></div>
+  <div class="card"><h3>Pendentes</h3><div class="num">${pendentes.length}</div></div>
+  <div class="card"><h3>Perdidas</h3><div class="num">${perdidos.length}</div></div>
+  <div class="card"><h3>Taxa de conversão</h3><div class="num">${taxa}%</div></div>
+  <div class="card"><h3>Eventos corporativos</h3><div class="num">${Object.keys(eventos).length}</div></div>
+</div>
+<h2>Reservas (últimos 7 dias)</h2>
+${leads.length ? `<table><thead><tr><th>Telefone</th><th>Pessoas</th><th>Dia</th><th>Status</th><th>Pedido em</th><th>Lembrete</th><th>Confirmado em</th></tr></thead><tbody>${linhasLeads}</tbody></table>` : '<div class="empty">Nenhuma reserva ainda</div>'}
+<h2>Eventos corporativos</h2>
+${Object.keys(eventos).length ? `<table><thead><tr><th>Nome</th><th>Empresa</th><th>Telefone</th><th>Pessoas</th><th>Data</th><th>Tipo</th><th>Orçamento</th><th>Quando</th></tr></thead><tbody>${linhasEventos}</tbody></table>` : '<div class="empty">Nenhum evento ainda</div>'}
+<div class="footer">Painel do gerente · Recarrega sozinho a cada 60s</div>
+</body></html>`);
+  } catch (e) {
+    res.status(500).send("Erro: " + e.message);
+  }
 });
 
 // ── LIMPAR HISTÓRICO (use quando histórico Redis estiver corrompido) ──
