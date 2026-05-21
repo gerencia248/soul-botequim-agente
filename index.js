@@ -396,9 +396,10 @@ function getStatusHorario() {
   if (diaOp === 1) return { aberto: false, fechaAs: null, proximaAbertura: "terça-feira às 16h" };
 
   // Terça, Quarta, Quinta: 16h–meia-noite
+  // Se fechado, sempre é porque ainda não chegou às 16h do dia → próxima abertura é HOJE às 16h.
+  // (madrugada após meia-noite já é tratada acima: vira diaOp do dia anterior aberto)
   if (diaOp >= 2 && diaOp <= 4) {
     if (hOp >= 16 && hOp < 28) return { aberto: true, fechaAs: "00h (meia-noite)" };
-    if (diaOp === 4) return { aberto: false, fechaAs: null, proximaAbertura: "sexta-feira às 12h" };
     return { aberto: false, fechaAs: null, proximaAbertura: "hoje às 16h" };
   }
 
