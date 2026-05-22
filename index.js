@@ -471,19 +471,19 @@ function getStatusHorario() {
     motivo
   });
 
-  // Madrugada (0h–4h): o bar acabou de fechar (estava aberto no dia anterior)
-  // ou continua fechado (segunda → terça, domingo → segunda fechado)
+  // Madrugada (0h–4h): trata o "fechamos há pouco" apenas quando o dia
+  // anterior fechou À MEIA-NOITE (Ter, Qua, Qui, Sex, Sáb).
+  // Segunda (fechada o dia todo) e Domingo (fecha às 21h) não geram "há pouco".
   if (h < 4) {
-    // diaAnterior = dia da noite que acabou
     const diaAnterior = (dia === 0) ? 6 : dia - 1;
-    // Se o diaAnterior era operacional (não segunda), foi "fechamos há pouco"
-    const fechouHaPouco = (diaAnterior !== 1);
+    // "Há pouco" só se o dia anterior fechou recentemente (à meia-noite)
+    const fechouMeiaNoite = diaAnterior >= 2 && diaAnterior <= 6;  // Ter-Sáb
+    const motivoMadrugada = fechouMeiaNoite ? "fechamos há pouco (meia-noite)" : null;
 
-    // Próxima abertura depende do dia atual (já é o dia novo)
-    if (dia === 1) return fechado("terça-feira às 16h", fechouHaPouco ? "fechamos há pouco (domingo encerrou)" : null);
-    if (dia >= 2 && dia <= 4) return fechado("hoje às 16h", fechouHaPouco ? "fechamos há pouco (meia-noite)" : null);
-    if (dia === 5 || dia === 6) return fechado("hoje às 12h", fechouHaPouco ? "fechamos há pouco (meia-noite)" : null);
-    if (dia === 0) return fechado("hoje (domingo) às 12h", fechouHaPouco ? "fechamos há pouco (meia-noite)" : null);
+    if (dia === 1) return fechado("terça-feira às 16h", motivoMadrugada);
+    if (dia >= 2 && dia <= 4) return fechado("hoje às 16h", motivoMadrugada);
+    if (dia === 5 || dia === 6) return fechado("hoje às 12h", motivoMadrugada);
+    if (dia === 0) return fechado("hoje (domingo) às 12h", motivoMadrugada);
   }
 
   // Segunda: fechado o dia todo
@@ -857,9 +857,168 @@ app.get("/", async (req, res) => {
   res.json({ status: "Soul Botequim online!", horario: getStatusHorario(), dataAtual: getDataAtual(), textoHorario: getTextoHorario() });
 });
 
+// ============================================================
+// SUÍTE DE TESTES DE HORÁRIO (blindagem anti-regressão)
+// ============================================================
+// Cada vez que alguém mexer em getStatusHorario() ou nos horários
+// do bar, esta suíte vai apontar imediatamente se algum cenário
+// quebrou. Roda no boot do servidor E sob demanda em /test-horarios.
+//
+// COMO MANTER:
+// - Mudou horário do bar? Atualize os horários esperados aqui.
+// - Adicionou novo dia/regra? Adicione casos de teste novos.
+// - NUNCA delete casos sem entender o que eles cobrem.
+// ============================================================
+const TESTES_HORARIO = [
+  // SEGUNDA — sempre fechado
+  { iso: "2026-05-18T15:00:00-03:00", nome: "Segunda 15h (sempre fechada)",
+    esperado: { aberto: false, proxima: /terça-feira às 16h/ } },
+  { iso: "2026-05-18T20:00:00-03:00", nome: "Segunda 20h (sempre fechada)",
+    esperado: { aberto: false, proxima: /terça-feira às 16h/ } },
+
+  // TERÇA, QUARTA, QUINTA — 16h até meia-noite
+  { iso: "2026-05-19T15:59:00-03:00", nome: "Terça 15:59 (1 min antes de abrir)",
+    esperado: { aberto: false, proxima: /hoje às 16h/ } },
+  { iso: "2026-05-19T16:00:00-03:00", nome: "Terça 16:00 (acabou de abrir)",
+    esperado: { aberto: true, fechaAs: /meia-noite/ } },
+  { iso: "2026-05-19T23:59:00-03:00", nome: "Terça 23:59 (último minuto aberto)",
+    esperado: { aberto: true } },
+  { iso: "2026-05-20T00:00:00-03:00", nome: "Qua 00:00 (acabou de fechar - madrugada)",
+    esperado: { aberto: false, motivo: /fechamos há pouco/ } },
+  { iso: "2026-05-20T02:30:00-03:00", nome: "Qua 02:30 (madrugada profunda)",
+    esperado: { aberto: false, motivo: /fechamos há pouco/ } },
+  { iso: "2026-05-20T10:00:00-03:00", nome: "Qua 10h (manhã, ainda fechado)",
+    esperado: { aberto: false, proxima: /hoje às 16h/ } },
+  { iso: "2026-05-21T15:00:00-03:00", nome: "Quinta 15h (antes de abrir - bug histórico)",
+    esperado: { aberto: false, proxima: /hoje às 16h/ } },
+
+  // SEXTA E SÁBADO — 12h até meia-noite
+  { iso: "2026-05-22T11:59:00-03:00", nome: "Sexta 11:59 (1 min antes de abrir)",
+    esperado: { aberto: false, proxima: /hoje às 12h/ } },
+  { iso: "2026-05-22T12:00:00-03:00", nome: "Sexta 12:00 (acabou de abrir)",
+    esperado: { aberto: true } },
+  { iso: "2026-05-22T23:59:00-03:00", nome: "Sexta 23:59 (último minuto aberto)",
+    esperado: { aberto: true } },
+  { iso: "2026-05-23T00:00:00-03:00", nome: "Sab 00:00 (acabou de fechar - bug histórico)",
+    esperado: { aberto: false, motivo: /fechamos há pouco/ } },
+  { iso: "2026-05-23T00:30:00-03:00", nome: "Sab 00:30 (madrugada pós sexta)",
+    esperado: { aberto: false, motivo: /fechamos há pouco/ } },
+  { iso: "2026-05-23T15:00:00-03:00", nome: "Sábado 15h (tarde, aberto)",
+    esperado: { aberto: true, fechaAs: /meia-noite/ } },
+  { iso: "2026-05-24T01:00:00-03:00", nome: "Dom 01:00 (madrugada pós sábado)",
+    esperado: { aberto: false, motivo: /fechamos há pouco/ } },
+
+  // DOMINGO — 12h até 21h
+  { iso: "2026-05-24T11:59:00-03:00", nome: "Domingo 11:59 (antes de abrir)",
+    esperado: { aberto: false, proxima: /hoje às 12h/ } },
+  { iso: "2026-05-24T13:00:00-03:00", nome: "Domingo 13h (aberto)",
+    esperado: { aberto: true, fechaAs: /21h/ } },
+  { iso: "2026-05-24T20:59:00-03:00", nome: "Domingo 20:59 (último minuto aberto)",
+    esperado: { aberto: true } },
+  { iso: "2026-05-24T21:00:00-03:00", nome: "Domingo 21:00 (acabou de fechar)",
+    esperado: { aberto: false, proxima: /terça-feira/ } },
+  { iso: "2026-05-25T02:00:00-03:00", nome: "Seg 02:00 (madrugada vinda de segunda fechada — NÃO deve dizer 'fechamos há pouco')",
+    esperado: { aberto: false, motivoVazio: true } },
+];
+
+function rodarTestesHorario() {
+  const origDate = global.Date;
+  const resultados = [];
+  try {
+    for (const t of TESTES_HORARIO) {
+      // Mock Date pra forçar uma data/hora específica
+      const dataFixa = new origDate(t.iso);
+      global.Date = class extends origDate {
+        constructor(...args) {
+          if (args.length === 0) return new origDate(dataFixa);
+          return new origDate(...args);
+        }
+        static now() { return dataFixa.getTime(); }
+      };
+      let ok = true, motivoFalha = null, resultado = null;
+      try {
+        resultado = getStatusHorario();
+        if (t.esperado.aberto !== undefined && resultado.aberto !== t.esperado.aberto) {
+          ok = false; motivoFalha = `aberto=${resultado.aberto}, esperado=${t.esperado.aberto}`;
+        }
+        if (ok && t.esperado.fechaAs && !t.esperado.fechaAs.test(String(resultado.fechaAs || ""))) {
+          ok = false; motivoFalha = `fechaAs="${resultado.fechaAs}" não casa com ${t.esperado.fechaAs}`;
+        }
+        if (ok && t.esperado.proxima && !t.esperado.proxima.test(String(resultado.proximaAbertura || ""))) {
+          ok = false; motivoFalha = `proximaAbertura="${resultado.proximaAbertura}" não casa com ${t.esperado.proxima}`;
+        }
+        if (ok && t.esperado.motivo && !t.esperado.motivo.test(String(resultado.motivo || ""))) {
+          ok = false; motivoFalha = `motivo="${resultado.motivo}" não casa com ${t.esperado.motivo}`;
+        }
+        if (ok && t.esperado.motivoVazio && resultado.motivo) {
+          ok = false; motivoFalha = `motivo deveria ser vazio, veio "${resultado.motivo}"`;
+        }
+      } catch (e) {
+        ok = false; motivoFalha = "EXCEÇÃO: " + e.message;
+      }
+      resultados.push({ nome: t.nome, ok, motivoFalha, resultado });
+    }
+  } finally {
+    global.Date = origDate;  // SEMPRE restaura o Date original
+  }
+  return resultados;
+}
+
+// ── ENDPOINT DE AUDITORIA: /test-horarios?phone=NUMERO_DOURADO ──
+app.get("/test-horarios", async (req, res) => {
+  const { phone } = req.query;
+  if (phone !== CONFIG.NUMERO_DOURADO) {
+    return res.status(403).send("Acesso negado");
+  }
+  const resultados = rodarTestesHorario();
+  const passou = resultados.filter(r => r.ok).length;
+  const falhou = resultados.filter(r => !r.ok).length;
+  const cor = falhou === 0 ? "#00cc66" : "#ff3344";
+  const linhas = resultados.map(r => `
+    <tr>
+      <td>${r.ok ? "✅" : "❌"}</td>
+      <td>${r.nome}</td>
+      <td><code>${r.ok ? "OK" : (r.motivoFalha || "?")}</code></td>
+      <td><code>${JSON.stringify(r.resultado || {})}</code></td>
+    </tr>`).join("");
+  res.send(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Soul Botequim — Auditoria de Horário</title>
+<style>
+  body { font-family: -apple-system, sans-serif; padding: 24px; background: #1a1a1a; color: #eee; }
+  h1 { color: ${cor}; }
+  .resumo { background: ${cor}; color: #000; padding: 16px; border-radius: 8px; font-size: 20px; font-weight: bold; margin: 20px 0; }
+  table { width: 100%; border-collapse: collapse; background: #2a2a2a; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #333; font-size: 13px; }
+  th { background: #333; color: #f5b800; }
+  code { background: #111; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #aaa; }
+</style></head><body>
+<h1>🛡️ Auditoria da Lógica de Horário</h1>
+<div class="resumo">${falhou === 0 ? "✅ TODOS OS " + passou + " TESTES PASSARAM" : "❌ " + falhou + " DE " + resultados.length + " TESTE(S) FALHARAM — INVESTIGUE"}</div>
+<table>
+<thead><tr><th>✓</th><th>Cenário</th><th>Resultado</th><th>Output</th></tr></thead>
+<tbody>${linhas}</tbody>
+</table>
+<p style="color:#666; margin-top:20px; font-size:12px;">Esta página roda a suíte de testes em tempo real. Cada vez que você recarrega, ela re-executa.</p>
+</body></html>`);
+});
+
 app.listen(CONFIG.PORT, () => {
   console.log("\n🍺 Soul Botequim — Luz rodando na porta " + CONFIG.PORT);
-  console.log("📡 Webhook: http://localhost:" + CONFIG.PORT + "/webhook\n");
+  console.log("📡 Webhook: http://localhost:" + CONFIG.PORT + "/webhook");
+
+  // ── BLINDAGEM: roda testes de horário no boot ──
+  const res = rodarTestesHorario();
+  const passou = res.filter(r => r.ok).length;
+  const falhou = res.filter(r => !r.ok).length;
+  console.log("\n📋 TESTES DE HORÁRIO: " + passou + "/" + res.length + " passaram");
+  if (falhou > 0) {
+    console.error("⚠️ ATENÇÃO: " + falhou + " teste(s) FALHOU(aram). Bot pode dar resposta errada!");
+    for (const r of res.filter(r => !r.ok)) {
+      console.error("  ✗ " + r.nome + " — " + r.motivoFalha);
+    }
+  } else {
+    console.log("✅ Lógica de horário validada\n");
+  }
 });
 
 // ── LEMBRETE AUTOMÁTICO DE RESERVA ───────────────────────────
