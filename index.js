@@ -435,11 +435,15 @@ function querCardapio(t) {
 }
 
 // ============================================================
-// CORREÇÃO 1 — getStatusHorario()
-// Problema original: madrugada (0h–4h) não era tratada como
-// extensão operacional do dia anterior. Sexta às 00h47 retornava
-// "fechado, abre hoje às 12h" mas o dia da semana ficava ambíguo
-// para o Claude. Agora diaOp/hOp tratam a madrugada corretamente.
+// CORREÇÃO HORÁRIO (v2) — getStatusHorario()
+// Lógica HONESTA: o bar fecha exatamente à meia-noite (00h).
+// Removida a "extensão de madrugada" antiga (que dizia 'aberto até 4h'
+// mas mandava mensagem 'fecha à meia-noite' — contradição que confundia
+// o cliente e expunha que era bot).
+//
+// Comportamento agora:
+//  - 00h–04h: bot diz "fechamos há pouco" (toque humano) + próxima abertura
+//  - Restante do dia: comportamento padrão pelo dia da semana
 // ============================================================
 function getStatusHorario() {
   const agora = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
@@ -447,38 +451,52 @@ function getStatusHorario() {
   const dia = data.getDay();  // 0=dom, 1=seg, 2=ter ... 6=sab
   const h = data.getHours() + data.getMinutes() / 60;
 
-  // Madrugada (0h–4h): operacionalmente ainda é o dia anterior
-  const diaOp = (h < 4) ? (dia === 0 ? 6 : dia - 1) : dia;
-  const hOp   = (h < 4) ? h + 24 : h;  // ex: 0h47 → 24.78h
+  // Helper: monta resposta de fechado (com motivo opcional)
+  const fechado = (proximaAbertura, motivo = null) => ({
+    aberto: false,
+    fechaAs: null,
+    proximaAbertura,
+    motivo
+  });
+
+  // Madrugada (0h–4h): o bar acabou de fechar (estava aberto no dia anterior)
+  // ou continua fechado (segunda → terça, domingo → segunda fechado)
+  if (h < 4) {
+    // diaAnterior = dia da noite que acabou
+    const diaAnterior = (dia === 0) ? 6 : dia - 1;
+    // Se o diaAnterior era operacional (não segunda), foi "fechamos há pouco"
+    const fechouHaPouco = (diaAnterior !== 1);
+
+    // Próxima abertura depende do dia atual (já é o dia novo)
+    if (dia === 1) return fechado("terça-feira às 16h", fechouHaPouco ? "fechamos há pouco (domingo encerrou)" : null);
+    if (dia >= 2 && dia <= 4) return fechado("hoje às 16h", fechouHaPouco ? "fechamos há pouco (meia-noite)" : null);
+    if (dia === 5 || dia === 6) return fechado("hoje às 12h", fechouHaPouco ? "fechamos há pouco (meia-noite)" : null);
+    if (dia === 0) return fechado("hoje (domingo) às 12h", fechouHaPouco ? "fechamos há pouco (meia-noite)" : null);
+  }
 
   // Segunda: fechado o dia todo
-  if (diaOp === 1) return { aberto: false, fechaAs: null, proximaAbertura: "terça-feira às 16h" };
+  if (dia === 1) return fechado("terça-feira às 16h");
 
-  // Terça, Quarta, Quinta: 16h–meia-noite
-  // Se fechado, sempre é porque ainda não chegou às 16h do dia → próxima abertura é HOJE às 16h.
-  // (madrugada após meia-noite já é tratada acima: vira diaOp do dia anterior aberto)
-  if (diaOp >= 2 && diaOp <= 4) {
-    if (hOp >= 16 && hOp < 28) return { aberto: true, fechaAs: "00h (meia-noite)" };
-    return { aberto: false, fechaAs: null, proximaAbertura: "hoje às 16h" };
+  // Terça, Quarta, Quinta: 16h até 00h (meia-noite)
+  if (dia >= 2 && dia <= 4) {
+    if (h >= 16) return { aberto: true, fechaAs: "00h (meia-noite)" };
+    return fechado("hoje às 16h");
   }
 
-  // Sexta e Sábado: 12h–meia-noite
-  if (diaOp === 5 || diaOp === 6) {
-    if (hOp >= 12 && hOp < 28) return { aberto: true, fechaAs: "00h (meia-noite)" };
-    return {
-      aberto: false,
-      fechaAs: null,
-      proximaAbertura: diaOp === 6 ? "domingo às 12h" : "hoje às 12h"
-    };
+  // Sexta e Sábado: 12h até 00h (meia-noite)
+  if (dia === 5 || dia === 6) {
+    if (h >= 12) return { aberto: true, fechaAs: "00h (meia-noite)" };
+    return fechado("hoje às 12h");
   }
 
-  // Domingo: 12h–21h
-  if (diaOp === 0) {
-    if (hOp >= 12 && hOp < 21) return { aberto: true, fechaAs: "21h" };
-    return { aberto: false, fechaAs: null, proximaAbertura: "terça-feira às 16h (segunda fechamos)" };
+  // Domingo: 12h até 21h
+  if (dia === 0) {
+    if (h >= 12 && h < 21) return { aberto: true, fechaAs: "21h" };
+    if (h >= 21) return fechado("terça-feira às 16h (segunda fechamos)");
+    return fechado("hoje às 12h");
   }
 
-  return { aberto: false, fechaAs: null, proximaAbertura: "em breve" };
+  return fechado("em breve");
 }
 
 // ============================================================
@@ -497,7 +515,8 @@ function getTextoHorario() {
   if (s.aberto) {
     return `O bar está ABERTO agora (${dataAtual}) e fecha às ${s.fechaAs}.`;
   }
-  return `O bar está FECHADO agora (${dataAtual}). Próxima abertura: ${s.proximaAbertura}. Convide o cliente para reservar: https://widget.getinapp.com.br/d6NZKJ6V`;
+  const motivoTexto = s.motivo ? ` — ${s.motivo}` : "";
+  return `O bar está FECHADO agora (${dataAtual})${motivoTexto}. Próxima abertura: ${s.proximaAbertura}. Convide o cliente para reservar: https://widget.getinapp.com.br/d6NZKJ6V`;
 }
 
 // ── DATA E HORA ATUAL ────────────────────────────────────────
