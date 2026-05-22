@@ -407,9 +407,21 @@ function querEventoCorporativo(t) {
 }
 
 function perguntaSobreHorario(t) {
+  const txt = t.toLowerCase();
+  // Se a pergunta menciona um DIA DIFERENTE DE HOJE (amanhã, sábado, etc.),
+  // NÃO usamos o handler determinístico (que só sabe do "hoje").
+  // Deixamos o Claude responder com contexto, pois ele tem a tabela completa de
+  // horários no system prompt e sabe qual dia é hoje.
+  const mencionaOutroDia = [
+    "amanhã","amanha","depois de amanhã","depois de amanha",
+    "segunda","terça","terca","quarta","quinta","sexta","sábado","sabado","domingo",
+    "próxima semana","proxima semana","semana que vem","feriado","próximo","proximo"
+  ].some(d => txt.includes(d));
+  if (mencionaOutroDia) return false;
+  // Só dispara handler determinístico quando a pergunta é claramente sobre AGORA/HOJE
   return ["que horas fecha","que horas abre","qual horario","qual o horário","horário de hoje",
     "fecha hoje","abre hoje","que horas","funcionamento","aberto agora","fechado agora"
-  ].some(g => t.toLowerCase().includes(g));
+  ].some(g => txt.includes(g));
 }
 
 function querRecomendacaoDrink(t) {
