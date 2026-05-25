@@ -980,24 +980,12 @@ app.post("/webhook", async (req, res) => {
       const ehCorporativo = querEventoCorporativo(mensagem);
       // Evento corporativo continua indo pelo fluxo dedicado (com perguntas)
       if (!ehCorporativo && (grupoGrande || ehEventoPessoal)) {
-        // Evita re-disparar se já encaminhou nas últimas 6h
-        const leadExistente = await obterLead(telefone);
-        const jaEncaminhou = leadExistente && leadExistente.status === "encaminhado_dourado";
-        const horasDesdeEnc = jaEncaminhou
-          ? (Date.now() - new Date(leadExistente.criadoEm).getTime()) / 3600000
-          : 999;
-
-        // COOLDOWN: já encaminhou recentemente. Responde com mensagem fixa
-        // pra não deixar o Claude improvisar com número errado.
-        if (jaEncaminhou && horasDesdeEnc <= 6) {
-          await enviarMensagem(telefone,
-            "Fica tranquilo que já passei seu contato pro *Dourado*! Ele vai te chamar aqui no WhatsApp em alguns minutos pra alinhar tudo direitinho. 🍻\n\n" +
-            "Se for urgente, pode chamar ele direto: (11) 95465-7178"
-          );
-          return res.status(200).json({ ok: true });
-        }
-
-        if (!jaEncaminhou || horasDesdeEnc > 6) {
+        // SEMPRE inicia o fluxo de coleta quando detecta evento/grupo grande.
+        // (Removida a regra anterior de "cooldown 6h" que bloqueava a coleta
+        // de novas informações se houvesse lead recente. O cliente sempre tem
+        // direito a fornecer info atualizada; o Dourado prefere receber lead
+        // novo do que ficar sem dado.)
+        {
           // Pré-popula dados que já conseguimos extrair da mensagem do cliente
           // (assim a Luz não pergunta o que já foi dito — fluxo mais natural)
           const datas = detectarDatasNaMensagem(mensagem);
