@@ -65,6 +65,11 @@ async function salvarLead(telefone, dados) {
       lembreteEnviado: dados.lembreteEnviado || false,
       lembreteEnviadoEm: dados.lembreteEnviadoEm || null,
       confirmadoEm: dados.confirmadoEm || null,
+      // Campos opcionais de lead enriquecido (Evento / Grupo Grande)
+      nomeLead: dados.nomeLead ?? null,
+      tipoLead: dados.tipoLead ?? null,
+      horarioLead: dados.horarioLead ?? null,
+      observacoesLead: dados.observacoesLead ?? null,
     };
     await redis.set("lead:" + telefone, JSON.stringify(lead), "EX", 86400 * 7); // 7 dias
     return lead;
@@ -249,6 +254,117 @@ async function processarFluxoEvento(telefone, mensagem) {
     "📱 Contato: " + telefone + "\n👤 Nome: " + d.nome + "\n🏢 Empresa: " + d.empresa +
     "\n📅 Data: " + d.data + "\n👥 Pessoas: " + d.pessoas + "\n🎊 Tipo: " + d.tipo + "\n💰 Orçamento: " + d.orcamento
   );
+}
+
+// ── FLUXO DE COLETA DE LEAD COMPLETO (EVENTO PESSOAL / GRUPO GRANDE) ──
+// Quando o cliente menciona evento pessoal ou grupo >30, em vez de mandar
+// info parcial pro Dourado imediatamente, a Luz primeiro coleta TODOS os
+// dados estruturados (nome, tipo, data, pessoas, horário, obs) e só DEPOIS
+// encaminha o lead COMPLETO. Otimiza o tempo do Dourado.
+const fluxoLeadDourado = {};
+const ETAPAS_LEAD_DOURADO = [
+  { campo: "nome",        pergunta: "Beleza, deixa eu anotar tudo certinho pro Dourado já te chamar com tudo pronto. Primeiro: qual é o seu nome?" },
+  { campo: "tipoEvento",  pergunta: "Que tipo de comemoração ou evento é? (aniversário, casamento, formatura, festa entre amigos, etc.)" },
+  { campo: "dataEvento",  pergunta: "Pra qual data você está pensando?" },
+  { campo: "pessoas",     pergunta: "Quantas pessoas, aproximadamente?" },
+  { campo: "horario",     pergunta: "Tem um horário em mente? (ex: 'à noite', 'a partir das 20h')" },
+  { campo: "observacoes", pergunta: "Por último: tem alguma preferência ou pedido especial? (decoração, cardápio personalizado, espaço reservado, bolo, etc.) Se não tiver nada específico, é só dizer 'nenhuma'." },
+];
+
+function estaNoFluxoLeadDourado(telefone) {
+  return fluxoLeadDourado[telefone] !== undefined;
+}
+
+async function iniciarFluxoLeadDourado(telefone, dadosIniciais) {
+  fluxoLeadDourado[telefone] = {
+    etapa: -1,
+    dados: dadosIniciais || {},
+    iniciadoEm: new Date().toISOString()
+  };
+  await avancarFluxoLeadDourado(telefone, null);
+}
+
+async function avancarFluxoLeadDourado(telefone, respostaAtual) {
+  const fluxo = fluxoLeadDourado[telefone];
+  if (!fluxo) return;
+
+  // Guarda resposta da etapa atual (só se já fez ao menos uma pergunta)
+  if (respostaAtual !== null && fluxo.etapa >= 0 && fluxo.etapa < ETAPAS_LEAD_DOURADO.length) {
+    const etapaAtual = ETAPAS_LEAD_DOURADO[fluxo.etapa];
+    fluxo.dados[etapaAtual.campo] = respostaAtual;
+  }
+
+  // Avança até encontrar próxima etapa não-preenchida (pula as que já têm dados)
+  fluxo.etapa++;
+  while (fluxo.etapa < ETAPAS_LEAD_DOURADO.length) {
+    const etapa = ETAPAS_LEAD_DOURADO[fluxo.etapa];
+    if (fluxo.dados[etapa.campo]) {
+      fluxo.etapa++;
+      continue;
+    }
+    await enviarMensagem(telefone, etapa.pergunta);
+    return;
+  }
+
+  // Fluxo completo → finaliza
+  await finalizarLeadDourado(telefone);
+}
+
+async function processarFluxoLeadDourado(telefone, mensagem) {
+  // Saída de emergência se cliente quiser cancelar
+  const t = String(mensagem).toLowerCase();
+  const cancelar = ["cancelar","desistir","deixa pra la","deixa pra lá","esqueci","esquece","não quero mais","nao quero mais","parar","sai dessa"];
+  if (cancelar.some(g => t.includes(g))) {
+    delete fluxoLeadDourado[telefone];
+    await enviarMensagem(telefone, "Tudo bem! Se mudar de ideia depois, é só me chamar. 🍻");
+    return;
+  }
+  await avancarFluxoLeadDourado(telefone, mensagem);
+}
+
+async function finalizarLeadDourado(telefone) {
+  const fluxo = fluxoLeadDourado[telefone];
+  if (!fluxo) return;
+  const d = fluxo.dados;
+
+  // 1) Avisa cliente
+  await enviarMensagem(telefone,
+    "Show, anotei tudo! 🍻\n\n" +
+    "Vou passar agora pro *Dourado* (nosso gerente). Ele vai te chamar aqui no WhatsApp em alguns minutos pra alinhar o resto. Combinado?\n\n" +
+    "Se for urgente, pode chamar ele direto: (11) 95465-7178"
+  );
+
+  // 2) Envia lead COMPLETO pro Dourado
+  const mensagemDourado =
+    "🎉 *NOVO LEAD COMPLETO — Evento/Grupo Grande*\n\n" +
+    "📱 Contato cliente: " + telefone + "\n" +
+    "👤 Nome: " + (d.nome || "(não informado)") + "\n" +
+    "🎊 Tipo de evento: " + (d.tipoEvento || "(não informado)") + "\n" +
+    "📅 Data: " + (d.dataEvento || "(não informada)") + "\n" +
+    "👥 Pessoas: " + (d.pessoas || "(não informado)") + "\n" +
+    "🕒 Horário: " + (d.horario || "(não informado)") + "\n" +
+    "📝 Observações: " + (d.observacoes || "(nenhuma)") + "\n\n" +
+    "_Cliente já foi avisado que você vai chamar. Lead 100% coletado pela Luz._";
+  try {
+    await enviarMensagem(CONFIG.NUMERO_DOURADO, mensagemDourado);
+    console.log("[DOURADO ✓] Lead COMPLETO enviado para " + CONFIG.NUMERO_DOURADO + " | cliente: " + telefone);
+  } catch (e) {
+    console.error("[DOURADO ✗] FALHA ao enviar lead completo de " + telefone + ": " + e.message);
+  }
+
+  // 3) Salva no Redis com todos os campos
+  await salvarLead(telefone, {
+    pessoas: parseInt(d.pessoas) || null,
+    dia: d.dataEvento || null,
+    status: "encaminhado_dourado",
+    nomeLead: d.nome,
+    tipoLead: d.tipoEvento,
+    horarioLead: d.horario,
+    observacoesLead: d.observacoes,
+  });
+
+  // 4) Limpa o fluxo
+  delete fluxoLeadDourado[telefone];
 }
 
 // ── MEMÓRIA DE CONVERSAS ─────────────────────────────────────
@@ -850,6 +966,7 @@ app.post("/webhook", async (req, res) => {
     console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] De " + telefone + ": " + mensagem);
 
     if (estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return res.status(200).json({ ok: true }); }
+    if (estaNoFluxoLeadDourado(telefone)) { await processarFluxoLeadDourado(telefone, mensagem); return res.status(200).json({ ok: true }); }
 
     // ── GRUPO GRANDE (acima de 30) OU EVENTO PESSOAL → encaminha pro Dourado ──
     // Regra: ATÉ 30 pessoas (inclusive) → fluxo normal pelo GetinApp.
@@ -881,56 +998,38 @@ app.post("/webhook", async (req, res) => {
         }
 
         if (!jaEncaminhou || horasDesdeEnc > 6) {
-          // Pega contexto da conversa pra Dourado
-          const historico = await getHistorico(telefone);
-          const ultimasMsgs = historico.slice(-6).map(m => {
-            const quem = m.role === "user" ? "Cliente" : "Luz";
-            return quem + ": " + String(m.content).substring(0, 250);
-          }).join("\n");
-
-          // Extrai dia/data se houver
+          // Pré-popula dados que já conseguimos extrair da mensagem do cliente
+          // (assim a Luz não pergunta o que já foi dito — fluxo mais natural)
           const datas = detectarDatasNaMensagem(mensagem);
-          let dataInfo = "não informada";
+          const dadosIniciais = {};
+          if (qtdPessoas) dadosIniciais.pessoas = String(qtdPessoas);
           if (datas.length > 0) {
             const d = datas[0];
             const r = diaSemanaDeData(d.dia, d.mes, d.ano);
-            dataInfo = r ? `${r.dataFormatada} (${r.nomeDia})` : `${d.dia}/${d.mes}`;
+            dadosIniciais.dataEvento = r ? r.dataFormatada + " (" + r.nomeDia + ")" : d.dia + "/" + d.mes;
           }
-          const tipo = ehEventoPessoal && grupoGrande ? "Evento + grupo grande"
-            : ehEventoPessoal ? "Evento pessoal"
-            : "Grupo grande (>30 pessoas)";
+          // Tenta inferir tipo de evento da mensagem
+          const tiposDetectaveis = ["aniversário","aniversario","casamento","formatura","despedida","chá de panela","cha de panela","chá de bebê","cha de bebe"];
+          for (const tipoT of tiposDetectaveis) {
+            if (mensagem.toLowerCase().includes(tipoT)) {
+              dadosIniciais.tipoEvento = tipoT.charAt(0).toUpperCase() + tipoT.slice(1);
+              break;
+            }
+          }
 
-          // 1) Avisa o cliente
+          // 1) Avisa o cliente que vai coletar info pro Dourado
           await enviarMensagem(telefone,
             "Que legal! Pra " + (ehEventoPessoal ? "esse tipo de evento" : "grupos acima de 30 pessoas") +
-            ", quem cuida pessoalmente é o *Dourado*, nosso gerente — assim a gente garante que tudo vai sair certinho. 🍻\n\n" +
-            "Já vou avisar ele agora. Ele vai te chamar aqui pelo WhatsApp em alguns minutos pra alinhar tudo. Combinado?"
+            ", quem cuida pessoalmente é o *Dourado* (nosso gerente). 🍻\n\n" +
+            "Antes de te passar pra ele, deixa eu só anotar uns detalhes pra ele já chegar com tudo na mão. Vai ser rapidinho!"
           );
 
-          // 2) Notifica Dourado com lead RICO (com log explícito de sucesso/falha)
-          const mensagemDourado =
-            "🎉 *LEAD URGENTE — " + tipo + "*\n\n" +
-            "📱 Cliente: " + telefone + "\n" +
-            "👥 Quantidade: " + (qtdPessoas ? qtdPessoas + " pessoas" : "não informada") + "\n" +
-            "📅 Data mencionada: " + dataInfo + "\n\n" +
-            "*Últimas mensagens da conversa:*\n" + (ultimasMsgs || "(sem histórico)") + "\n\n" +
-            "_⚡ A Luz já avisou o cliente que você vai chamar. Toque o quanto antes._";
-          try {
-            await enviarMensagem(CONFIG.NUMERO_DOURADO, mensagemDourado);
-            console.log("[DOURADO ✓] Lead enviado com sucesso para " + CONFIG.NUMERO_DOURADO + " sobre cliente " + telefone);
-          } catch (errDourado) {
-            console.error("[DOURADO ✗] FALHA ao notificar Dourado (" + CONFIG.NUMERO_DOURADO + "): " + errDourado.message);
-            // Mesmo se falhar pro Dourado, não quebra o fluxo do cliente
-          }
+          // 2) Inicia fluxo de coleta estruturada
+          //    A primeira pergunta do fluxo é enviada automaticamente.
+          //    Quando o fluxo completar, o lead COMPLETO vai pro Dourado.
+          await iniciarFluxoLeadDourado(telefone, dadosIniciais);
 
-          // 3) Salva lead com status especial
-          await salvarLead(telefone, {
-            pessoas: qtdPessoas,
-            dia: datas.length > 0 ? (datas[0].dia + "/" + datas[0].mes) : null,
-            status: "encaminhado_dourado",
-          });
-
-          console.log("[ENCAMINHADO] " + telefone + " (" + tipo + ", " + (qtdPessoas || "?") + " pessoas) → Dourado");
+          console.log("[FLUXO-LEAD] Iniciado para " + telefone + " com pre-dados: " + JSON.stringify(dadosIniciais));
           return res.status(200).json({ ok: true });
         }
       }
@@ -1249,6 +1348,21 @@ setInterval(async () => {
     }
   } catch (e) { console.error("[LEMBRETE] Loop:", e.message); }
 }, 10 * 60 * 1000);
+
+// Limpa fluxos de lead-dourado abandonados (>1h sem resposta)
+setInterval(() => {
+  try {
+    const agora = Date.now();
+    for (const tel of Object.keys(fluxoLeadDourado)) {
+      const fluxo = fluxoLeadDourado[tel];
+      const idadeMin = (agora - new Date(fluxo.iniciadoEm).getTime()) / 60000;
+      if (idadeMin > 60) {
+        delete fluxoLeadDourado[tel];
+        console.log("[FLUXO-LEAD] Limpeza: fluxo abandonado de " + tel + " (" + idadeMin.toFixed(0) + " min)");
+      }
+    }
+  } catch (e) { console.error("[FLUXO-LEAD CLEANUP]:", e.message); }
+}, 15 * 60 * 1000); // checa a cada 15 min
 
 // Marca leads pendentes "perdidos" após 24h (limpeza diária)
 setInterval(async () => {
