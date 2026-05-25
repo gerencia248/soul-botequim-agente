@@ -109,6 +109,108 @@ function pareceConfirmacao(texto) {
   return ["confirmei","confirmado","fiz a reserva","reservei","reserva feita","ta feito","tá feito","já confirmei","ja confirmei","ja reservei","já reservei"].some(p => t.includes(p));
 }
 
+// ── DETECTOR DE DATAS + DIA DA SEMANA (BLINDAGEM ANTI-BUG) ──
+// Quando o cliente menciona uma data (12/06, "dia 15", "15 de junho"),
+// calculamos o dia da semana DETERMINISTICAMENTE e injetamos no contexto
+// do Claude. Assim a Luz nunca mais vai perguntar ao cliente em que dia
+// da semana uma data cai — o sistema sempre sabe.
+
+const NOMES_DIAS_SEMANA = ["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"];
+const NOMES_MESES_PT = {
+  janeiro: 1, fevereiro: 2, março: 3, marco: 3, abril: 4, maio: 5, junho: 6,
+  julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12
+};
+
+function detectarDatasNaMensagem(texto) {
+  if (!texto) return [];
+  const datas = [];
+
+  // Pattern 1: DD/MM ou DD/MM/YY ou DD/MM/YYYY
+  const re1 = /\b(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?\b/g;
+  let m;
+  while ((m = re1.exec(texto)) !== null) {
+    const dia = parseInt(m[1]);
+    const mes = parseInt(m[2]);
+    if (dia < 1 || dia > 31 || mes < 1 || mes > 12) continue;
+    let ano = m[3] ? parseInt(m[3]) : null;
+    if (ano && ano < 100) ano += 2000;
+    datas.push({ dia, mes, ano, original: m[0] });
+  }
+
+  // Pattern 2: "12 de junho" / "dia 15 de outubro"
+  const re2 = /\b(\d{1,2})\s+de\s+(janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/gi;
+  while ((m = re2.exec(texto)) !== null) {
+    const dia = parseInt(m[1]);
+    const mes = NOMES_MESES_PT[m[2].toLowerCase()];
+    if (mes && dia >= 1 && dia <= 31) {
+      datas.push({ dia, mes, ano: null, original: m[0] });
+    }
+  }
+  return datas;
+}
+
+function diaSemanaDeData(dia, mes, ano) {
+  const agora = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  let anoUsar = ano;
+  if (!anoUsar) {
+    anoUsar = agora.getFullYear();
+    const candidato = new Date(anoUsar, mes - 1, dia);
+    if (candidato < agora) anoUsar++; // se data já passou este ano, assume próximo
+  }
+  const d = new Date(anoUsar, mes - 1, dia);
+  if (isNaN(d.getTime())) return null;
+  return {
+    nomeDia: NOMES_DIAS_SEMANA[d.getDay()],
+    diaSemanaIdx: d.getDay(),
+    dataFormatada: d.toLocaleDateString("pt-BR"),
+    anoUsado: anoUsar,
+  };
+}
+
+function formatarContextoDatas(texto) {
+  const datas = detectarDatasNaMensagem(texto);
+  if (datas.length === 0) return "";
+  const linhas = [];
+  for (const d of datas) {
+    const r = diaSemanaDeData(d.dia, d.mes, d.ano);
+    if (r) linhas.push(`- "${d.original}" => ${r.dataFormatada} (${r.nomeDia})`);
+  }
+  if (linhas.length === 0) return "";
+  return "\n\nINFO DETERMINISTICA (DATAS MENCIONADAS PELO CLIENTE):\n" +
+    "O sistema calculou o dia da semana exato pra cada data citada:\n" +
+    linhas.join("\n") +
+    "\n\nUSE estas informacoes ao falar sobre as datas. NUNCA pergunte ao cliente em que dia da semana uma data cai — o sistema ja calculou.";
+}
+
+// ── EXTRATOR DE QUANTIDADE DE PESSOAS ───────────────────────
+// Pega "30 pessoas", "umas 40", "por volta de 50", "30 a 40 convidados"
+function extrairQuantidadePessoas(texto) {
+  if (!texto) return null;
+  const t = texto.toLowerCase();
+  // Range "N a M pessoas" → pega o máximo
+  let m = t.match(/(\d+)\s*(?:a|ou|até|ate|-)\s*(\d+)\s*(?:pessoas?|convidados?|gente|pax)/);
+  if (m) return parseInt(m[2]);
+  // "N pessoas/convidados/gente"
+  m = t.match(/(\d+)\s*(?:pessoas?|convidados?|gente|pax)/);
+  if (m) return parseInt(m[1]);
+  // "por volta de N" / "em torno de N" / "umas N" / "uns N"
+  m = t.match(/(?:por volta de|em torno de|cerca de|umas?|uns)\s*(\d+)/);
+  if (m) return parseInt(m[1]);
+  return null;
+}
+
+// ── DETECTOR DE EVENTO (pessoal ou corporativo) ─────────────
+function querEventoOuFestaPessoal(t) {
+  if (!t) return false;
+  const txt = t.toLowerCase();
+  return [
+    "aniversário","aniversario","casamento","bodas","formatura","despedida de solteiro",
+    "despedida de solteira","chá de bebê","cha de bebe","chá de panela","cha de panela",
+    "festa","comemoração","comemoracao","celebração","celebracao","bate-papo de noivos",
+    "evento privado","evento particular","reservar o bar","fechar o bar","fechamento do bar"
+  ].some(g => txt.includes(g));
+}
+
 // ── FLUXO DE EVENTOS CORPORATIVOS ───────────────────────────
 const fluxoEventos = {};
 const ETAPAS_EVENTO = [
@@ -568,6 +670,12 @@ FORMATAÇÃO WHATSAPP (CRÍTICO — NÃO IGNORAR):
 - NUNCA use ###, **, __, [texto](link) — isso é Markdown padrão, NÃO funciona no WhatsApp
 - Para links: cole a URL pura (https://...), sem colchetes, parênteses ou asteriscos ao redor
 
+DATAS (REGRA INVIOLÁVEL):
+- Quando o cliente mencionar uma data (ex: "12/06", "dia 15", "15 de junho"), o sistema injeta automaticamente no contexto qual dia da semana é essa data
+- USE essa informação ao confirmar. Ex: "Perfeito, 12/06 cai numa sexta, anotei!"
+- NUNCA, JAMAIS, EM NENHUMA HIPÓTESE pergunte ao cliente "em que dia da semana cai a data X?" — você JÁ TEM essa info do sistema
+- Se a info do dia da semana NÃO aparecer no contexto pra uma data, é porque o cliente não citou data; pergunte só QUAL é a data, sem nunca perguntar dia da semana
+
 ESCOPO:
 - Você é atendente de bar, NÃO terapeuta ou conselheiro
 - NUNCA invente informações que não estão neste prompt
@@ -644,15 +752,18 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   // no historico de mensagens anteriores e usar SOMENTE o valor abaixo.
   const dataAgora = getDataAtual();
   const statusAgora = getTextoHorario();
+  // BLINDAGEM ADICIONAL: se o cliente mencionou alguma data na ultima mensagem,
+  // calculamos deterministicamente o dia da semana e injetamos no contexto.
+  const ancoraDatas = formatarContextoDatas(mensagemUsuario);
 
   const mensagensComAncora = [
     {
       role: "user",
-      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar."
+      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas
     },
     {
       role: "assistant",
-      content: "Confirmado. Hoje e " + dataAgora + ". " + statusAgora + " Vou usar exclusivamente estas informacoes em todas as respostas sobre data e horario."
+      content: "Confirmado. Hoje e " + dataAgora + ". " + statusAgora + " Vou usar exclusivamente estas informacoes em todas as respostas sobre data e horario. NUNCA vou perguntar ao cliente em que dia da semana uma data cai — o sistema sempre calcula por mim."
     },
     ...historico
   ];
@@ -736,6 +847,74 @@ app.post("/webhook", async (req, res) => {
     console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] De " + telefone + ": " + mensagem);
 
     if (estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return res.status(200).json({ ok: true }); }
+
+    // ── GRUPO GRANDE (acima de 30) OU EVENTO PESSOAL → encaminha pro Dourado ──
+    // Regra: ATÉ 30 pessoas (inclusive) → fluxo normal pelo GetinApp.
+    //        ACIMA de 30 pessoas (31+) → Dourado cuida pessoalmente.
+    // Eventos pessoais (aniversário, casamento, etc.) sempre vão pro Dourado.
+    // Manda lead PROATIVO pro Dourado com últimas 6 mensagens da conversa.
+    {
+      const qtdPessoas = extrairQuantidadePessoas(mensagem);
+      const ehEventoPessoal = querEventoOuFestaPessoal(mensagem);
+      const grupoGrande = qtdPessoas !== null && qtdPessoas > 30;
+      const ehCorporativo = querEventoCorporativo(mensagem);
+      // Evento corporativo continua indo pelo fluxo dedicado (com perguntas)
+      if (!ehCorporativo && (grupoGrande || ehEventoPessoal)) {
+        // Evita re-disparar se já encaminhou nas últimas 6h
+        const leadExistente = await obterLead(telefone);
+        const jaEncaminhou = leadExistente && leadExistente.status === "encaminhado_dourado";
+        const horasDesdeEnc = jaEncaminhou
+          ? (Date.now() - new Date(leadExistente.criadoEm).getTime()) / 3600000
+          : 999;
+        if (!jaEncaminhou || horasDesdeEnc > 6) {
+          // Pega contexto da conversa pra Dourado
+          const historico = await getHistorico(telefone);
+          const ultimasMsgs = historico.slice(-6).map(m => {
+            const quem = m.role === "user" ? "Cliente" : "Luz";
+            return quem + ": " + String(m.content).substring(0, 250);
+          }).join("\n");
+
+          // Extrai dia/data se houver
+          const datas = detectarDatasNaMensagem(mensagem);
+          let dataInfo = "não informada";
+          if (datas.length > 0) {
+            const d = datas[0];
+            const r = diaSemanaDeData(d.dia, d.mes, d.ano);
+            dataInfo = r ? `${r.dataFormatada} (${r.nomeDia})` : `${d.dia}/${d.mes}`;
+          }
+          const tipo = ehEventoPessoal && grupoGrande ? "Evento + grupo grande"
+            : ehEventoPessoal ? "Evento pessoal"
+            : "Grupo grande (>30 pessoas)";
+
+          // 1) Avisa o cliente
+          await enviarMensagem(telefone,
+            "Que legal! Pra " + (ehEventoPessoal ? "esse tipo de evento" : "grupos acima de 30 pessoas") +
+            ", quem cuida pessoalmente é o *Dourado*, nosso gerente — assim a gente garante que tudo vai sair certinho. 🍻\n\n" +
+            "Já vou avisar ele agora. Ele vai te chamar aqui pelo WhatsApp em alguns minutos pra alinhar tudo. Combinado?"
+          );
+
+          // 2) Notifica Dourado com lead RICO
+          await enviarMensagem(CONFIG.NUMERO_DOURADO,
+            "🎉 *LEAD URGENTE — " + tipo + "*\n\n" +
+            "📱 Cliente: " + telefone + "\n" +
+            "👥 Quantidade: " + (qtdPessoas ? qtdPessoas + " pessoas" : "não informada") + "\n" +
+            "📅 Data mencionada: " + dataInfo + "\n\n" +
+            "*Últimas mensagens da conversa:*\n" + (ultimasMsgs || "(sem histórico)") + "\n\n" +
+            "_⚡ A Luz já avisou o cliente que você vai chamar. Toque o quanto antes._"
+          );
+
+          // 3) Salva lead com status especial
+          await salvarLead(telefone, {
+            pessoas: qtdPessoas,
+            dia: datas.length > 0 ? (datas[0].dia + "/" + datas[0].mes) : null,
+            status: "encaminhado_dourado",
+          });
+
+          console.log("[ENCAMINHADO] " + telefone + " (" + tipo + ", " + (qtdPessoas || "?") + " pessoas) → Dourado");
+          return res.status(200).json({ ok: true });
+        }
+      }
+    }
 
     if (contemPalavroes(mensagem)) {
       await enviarMensagem(telefone, "Por favor, vamos manter a conversa respeitosa. Estou aqui para ajudar com cardápio, reservas ou qualquer dúvida sobre o Soul Botequim.");
