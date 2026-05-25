@@ -694,7 +694,10 @@ HORÁRIOS DE FUNCIONAMENTO:
 
 INFORMAÇÕES DO BAR:
 - Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP
-- Tel: (11) 95498-7240 | Instagram: @soulbotequim | Gerente: Dourado
+- *Telefone do bar* (atendimento geral, reservas pelo widget): (11) 95498-7240
+- *WhatsApp do gerente Dourado* (eventos, grupos grandes, casos especiais): (11) 95465-7178
+- Instagram: @soulbotequim
+- ATENÇÃO: o telefone do bar e o WhatsApp do Dourado são DIFERENTES. Nunca confunda. Quando precisar passar contato do Dourado, use SEMPRE (11) 95465-7178.
 - Pet friendly | Área externa | Acesso para cadeirantes | Wi-Fi | Banheiro adaptado para cadeirantes
 - Sem couvert | Taxa de rolha R$70 | Sem happy hour | Comanda individual
 - Música: Jazz, Blues e Brasilidades — programação no Instagram @soulbotequim
@@ -866,6 +869,17 @@ app.post("/webhook", async (req, res) => {
         const horasDesdeEnc = jaEncaminhou
           ? (Date.now() - new Date(leadExistente.criadoEm).getTime()) / 3600000
           : 999;
+
+        // COOLDOWN: já encaminhou recentemente. Responde com mensagem fixa
+        // pra não deixar o Claude improvisar com número errado.
+        if (jaEncaminhou && horasDesdeEnc <= 6) {
+          await enviarMensagem(telefone,
+            "Fica tranquilo que já passei seu contato pro *Dourado*! Ele vai te chamar aqui no WhatsApp em alguns minutos pra alinhar tudo direitinho. 🍻\n\n" +
+            "Se for urgente, pode chamar ele direto: (11) 95465-7178"
+          );
+          return res.status(200).json({ ok: true });
+        }
+
         if (!jaEncaminhou || horasDesdeEnc > 6) {
           // Pega contexto da conversa pra Dourado
           const historico = await getHistorico(telefone);
