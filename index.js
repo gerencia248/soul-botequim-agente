@@ -907,15 +907,21 @@ app.post("/webhook", async (req, res) => {
             "Já vou avisar ele agora. Ele vai te chamar aqui pelo WhatsApp em alguns minutos pra alinhar tudo. Combinado?"
           );
 
-          // 2) Notifica Dourado com lead RICO
-          await enviarMensagem(CONFIG.NUMERO_DOURADO,
+          // 2) Notifica Dourado com lead RICO (com log explícito de sucesso/falha)
+          const mensagemDourado =
             "🎉 *LEAD URGENTE — " + tipo + "*\n\n" +
             "📱 Cliente: " + telefone + "\n" +
             "👥 Quantidade: " + (qtdPessoas ? qtdPessoas + " pessoas" : "não informada") + "\n" +
             "📅 Data mencionada: " + dataInfo + "\n\n" +
             "*Últimas mensagens da conversa:*\n" + (ultimasMsgs || "(sem histórico)") + "\n\n" +
-            "_⚡ A Luz já avisou o cliente que você vai chamar. Toque o quanto antes._"
-          );
+            "_⚡ A Luz já avisou o cliente que você vai chamar. Toque o quanto antes._";
+          try {
+            await enviarMensagem(CONFIG.NUMERO_DOURADO, mensagemDourado);
+            console.log("[DOURADO ✓] Lead enviado com sucesso para " + CONFIG.NUMERO_DOURADO + " sobre cliente " + telefone);
+          } catch (errDourado) {
+            console.error("[DOURADO ✗] FALHA ao notificar Dourado (" + CONFIG.NUMERO_DOURADO + "): " + errDourado.message);
+            // Mesmo se falhar pro Dourado, não quebra o fluxo do cliente
+          }
 
           // 3) Salva lead com status especial
           await salvarLead(telefone, {
@@ -1344,6 +1350,38 @@ ${Object.keys(eventos).length ? `<table><thead><tr><th>Nome</th><th>Empresa</th>
 </body></html>`);
   } catch (e) {
     res.status(500).send("Erro: " + e.message);
+  }
+});
+
+// ── TESTE DE NOTIFICAÇÃO AO DOURADO ─────────────────────────
+// Envia mensagem de teste pro WhatsApp do Dourado pra você confirmar
+// que a integração com o número dele está funcionando.
+// Acesse: GET /test-dourado?phone=5511954657178
+app.get("/test-dourado", async (req, res) => {
+  const { phone } = req.query;
+  if (phone !== CONFIG.NUMERO_DOURADO) {
+    return res.status(403).send("Acesso negado. Use ?phone=NUMERO_DO_GERENTE");
+  }
+  try {
+    const agora = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    await enviarMensagem(CONFIG.NUMERO_DOURADO,
+      "🧪 *Teste de notificação do bot Luz*\n\n" +
+      "Se você está lendo esta mensagem, significa que a integração entre o bot e o seu WhatsApp está *funcionando perfeitamente*. ✅\n\n" +
+      "Quando um cliente pedir evento ou reserva acima de 30 pessoas, você vai receber um lead automático aqui, parecido com este.\n\n" +
+      "_Teste enviado em: " + agora + "_"
+    );
+    res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px;background:#1a1a1a;color:#0c6;text-align:center">
+      <h1>✅ Mensagem de teste enviada!</h1>
+      <p>Verifique o WhatsApp do Dourado (${CONFIG.NUMERO_DOURADO}).</p>
+      <p>Se a mensagem chegou, está tudo funcionando.</p>
+      <p>Se NÃO chegou, abre os logs da Railway para ver o erro detalhado.</p>
+    </body></html>`);
+  } catch (e) {
+    res.status(500).send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px;background:#1a1a1a;color:#f33;text-align:center">
+      <h1>❌ FALHA ao enviar pro Dourado</h1>
+      <p>Erro: <code>${e.message}</code></p>
+      <p>Provável causa: número errado, Dourado bloqueou o bot, ou Z-API com problema.</p>
+    </body></html>`);
   }
 });
 
