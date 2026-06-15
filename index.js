@@ -1045,9 +1045,11 @@ function dividirEmMensagens(texto) {
 }
 
 // ── ENVIAR MENSAGEM ──────────────────────────────────────────
-async function enviarMensagem(telefone, texto) {
+async function enviarMensagem(telefone, texto, opts = {}) {
   const textoFinal = sanitizarParaWhatsApp(texto);
-  const partes = dividirEmMensagens(textoFinal);
+  // Conteúdos estruturados (cardápios, listas) devem ir INTEIROS numa única
+  // mensagem: passe { fracionar: false }. O resto é fracionado normalmente.
+  const partes = opts.fracionar === false ? [textoFinal] : dividirEmMensagens(textoFinal);
   const url = "https://api.z-api.io/instances/" + CONFIG.ZAPI_INSTANCE_ID + "/token/" + CONFIG.ZAPI_TOKEN + "/send-text";
   for (let i = 0; i < partes.length; i++) {
     // delayMessage: segundos que o WhatsApp mostra "digitando..." antes de enviar (mais humano).
@@ -1179,19 +1181,20 @@ app.post("/webhook", async (req, res) => {
     // ── CARDÁPIOS COMPLETOS ──
     const tipoCardapio = querCardapio(mensagem);
     if (tipoCardapio) {
+      const inteiro = { fracionar: false };
       if (tipoCardapio === "drinks") {
-        await enviarMensagem(telefone, CARDAPIO_DRINKS);
+        await enviarMensagem(telefone, CARDAPIO_DRINKS, inteiro);
       } else if (tipoCardapio === "vinhos") {
-        await enviarMensagem(telefone, CARDAPIO_VINHOS);
+        await enviarMensagem(telefone, CARDAPIO_VINHOS, inteiro);
       } else if (tipoCardapio === "doses") {
-        await enviarMensagem(telefone, CARDAPIO_DOSES);
+        await enviarMensagem(telefone, CARDAPIO_DOSES, inteiro);
       } else if (tipoCardapio === "comidas") {
-        await enviarMensagem(telefone, CARDAPIO_COMIDAS);
+        await enviarMensagem(telefone, CARDAPIO_COMIDAS, inteiro);
       } else if (tipoCardapio === "completo") {
-        await enviarMensagem(telefone, CARDAPIO_DRINKS);
-        await enviarMensagem(telefone, CARDAPIO_VINHOS);
-        await enviarMensagem(telefone, CARDAPIO_DOSES);
-        await enviarMensagem(telefone, CARDAPIO_COMIDAS);
+        await enviarMensagem(telefone, CARDAPIO_DRINKS, inteiro);
+        await enviarMensagem(telefone, CARDAPIO_VINHOS, inteiro);
+        await enviarMensagem(telefone, CARDAPIO_DOSES, inteiro);
+        await enviarMensagem(telefone, CARDAPIO_COMIDAS, inteiro);
       }
       return res.status(200).json({ ok: true });
     }
@@ -1199,9 +1202,9 @@ app.post("/webhook", async (req, res) => {
     if (querVeganoVegetariano(mensagem)) {
       const txt = mensagem.toLowerCase();
       if (["vegano","vegana","plant based","plant-based"].some(g => txt.includes(g))) {
-        await enviarMensagem(telefone, OPCOES_VEGANAS);
+        await enviarMensagem(telefone, OPCOES_VEGANAS, { fracionar: false });
       } else {
-        await enviarMensagem(telefone, OPCOES_VEGETARIANAS);
+        await enviarMensagem(telefone, OPCOES_VEGETARIANAS, { fracionar: false });
       }
       return res.status(200).json({ ok: true });
     }
