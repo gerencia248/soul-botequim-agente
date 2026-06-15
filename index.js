@@ -735,6 +735,28 @@ function querCardapio(t) {
   return null;
 }
 
+// Cliente está PEDINDO UMA SUGESTÃO/RECOMENDAÇÃO (quer que a Luz indique e converse).
+function pedeSugestao(t) {
+  if (!t) return false;
+  const txt = t.toLowerCase();
+  return [
+    "sugest","sugere","sugerir","recomend","indic",
+    "o que é bom","o que e bom","o que tem de bom","o que tem de melhor",
+    "o que você gosta","o que voce gosta","o que mais gosta","o que você mais gosta",
+    "o que você acha","o que voce acha","o que vale a pena","o que pedir","o que devo pedir",
+    "me ajuda a escolher","me ajuda escolher","uma dica","alguma dica","alguma sugestão",
+    "qual o melhor","qual é o melhor","quais os melhores","o que você indica","o que voce indica"
+  ].some(g => txt.includes(g));
+}
+
+// Mensagem fala de COMIDA (pra não responder com pergunta de drink).
+function falaDeComida(t) {
+  if (!t) return false;
+  const txt = t.toLowerCase();
+  return ["comida","comer","petisco","petiscos","prato","pratos","lanche","lanches",
+    "proteína","proteina","carne","carnes","sobremesa","beliscar","fome","jantar","almoç"].some(g => txt.includes(g));
+}
+
 // ============================================================
 // CORREÇÃO HORÁRIO (v2) — getStatusHorario()
 // Lógica HONESTA: o bar fecha exatamente à meia-noite (00h).
@@ -911,7 +933,17 @@ RECOMENDAÇÕES:
 - TROPICAL: Caju Amigo, Carcarah, Amarelo Manga
 - AUTORAL/DIFERENTE: Jacira, Dama da Noite, El Diablo
 
+RECOMENDAÇÕES DE COMIDA (use para sugerir; indique 2-3 e converse, NUNCA mande o cardápio inteiro):
+- PETISCOS MAIS PEDIDOS: Coxinha de Frango e Catupiry, Torresmo de Panceta, Croquete de Carne, Bolinho de Carne Seca, Cogumelos
+- PRA DIVIDIR EM GRUPO: Costelinha de Porco, Frango Frito, Pastel Misto, Batata Frita
+- PRATOS/CARNES: Oswaldo Aranha, Parmeggiana de Mignon, Picanha, Fraldinha
+- LANCHES: Cheeseburger, Soul Crispy Chicken, Bauru a Moda
+- DIFERENTE/SOFISTICADO: Crudo de Atum e Cítricos, Steak Tartare, Vinagrete Polvo, Palmito Pupunha na Brasa
+- VEGGIE/LEVE: Cogumelos, Palmito Pupunha na Brasa, Legumes na Brasa, Quiabo na Brasa
+- SOBREMESA: Crepe de Doce de Leite Caramelizado
+
 COMO AGIR:
+- SUGESTÃO/RECOMENDAÇÃO (de comida OU drink): NÃO mande o cardápio inteiro. Recomende 2-3 opções de forma simpática, diga rapidinho por que valem a pena, e pergunte a preferência (ex.: "prefere um petisco pra dividir ou um prato mais reforçado?", "algo leve ou mais encorpado?"). No fim, ofereça mandar o cardápio completo se ele quiser.
 - Nunca invente preços ou itens fora do cardápio
 - Programação musical: direcione para @soulbotequim
 - Quando fechado, convide para reservar
@@ -1179,8 +1211,10 @@ app.post("/webhook", async (req, res) => {
     }
 
     // ── CARDÁPIOS COMPLETOS ──
+    // Se o cliente pede uma SUGESTÃO/RECOMENDAÇÃO, NÃO despeja o cardápio:
+    // deixa a Luz conversar e indicar (cai no Claude / recomendação de drink).
     const tipoCardapio = querCardapio(mensagem);
-    if (tipoCardapio) {
+    if (tipoCardapio && !pedeSugestao(mensagem)) {
       const inteiro = { fracionar: false };
       if (tipoCardapio === "drinks") {
         // Bebidas = drinks + doses (cachaças, rum, tequila...) juntos
@@ -1212,7 +1246,9 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    if (querRecomendacaoDrink(mensagem)) {
+    // Recomendação de DRINK (pergunta a preferência). Só quando NÃO fala de comida —
+    // sugestão de comida vai pro Claude conversar com base nas recomendações do prompt.
+    if (querRecomendacaoDrink(mensagem) && !falaDeComida(mensagem)) {
       await enviarMensagem(telefone, "Com prazer! Vou te ajudar a escolher o drink ideal.\n\nVocê prefere algo *refrescante*, *forte*, *clássico*, *tropical/brasileiro* ou algo *diferente e autoral*?");
       return res.status(200).json({ ok: true });
     }
