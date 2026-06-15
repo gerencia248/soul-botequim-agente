@@ -971,7 +971,7 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
     const response = await axios.post(
       "https://api.anthropic.com/v1/messages",
       {
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
         max_tokens: 1024,
         system: getSYSTEM_PROMPT(),
         messages: mensagensComAncora
@@ -1050,12 +1050,13 @@ async function enviarMensagem(telefone, texto) {
   const partes = dividirEmMensagens(textoFinal);
   const url = "https://api.z-api.io/instances/" + CONFIG.ZAPI_INSTANCE_ID + "/token/" + CONFIG.ZAPI_TOKEN + "/send-text";
   for (let i = 0; i < partes.length; i++) {
-    await axios.post(url, { phone: telefone, message: partes[i] },
+    // delayMessage: segundos que o WhatsApp mostra "digitando..." antes de enviar (mais humano).
+    const digitando = Math.min(3, Math.max(1, Math.round(partes[i].length / 70)));
+    await axios.post(url, { phone: telefone, message: partes[i], delayMessage: digitando },
       { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } });
-    // Pausa entre mensagens (não após a última), proporcional ao tamanho — simula digitação
+    // Espaça as mensagens (mantém a ordem e um ritmo natural de digitação).
     if (i < partes.length - 1) {
-      const espera = Math.min(2500, 600 + partes[i].length * 25);
-      await new Promise(r => setTimeout(r, espera));
+      await new Promise(r => setTimeout(r, (digitando + 0.5) * 1000));
     }
   }
 }
@@ -1072,6 +1073,14 @@ app.post("/webhook", async (req, res) => {
     if (await jaProcessou(msgId)) { console.log("[DUPLICADA] " + msgId); return res.status(200).json({ ok: true }); }
 
     const telefone = body.phone;
+
+    // ── ÁUDIO: o bot ainda não transcreve. Em vez de ignorar, pede texto. ──
+    if (telefone && body.audio && !(body.text && body.text.message)) {
+      console.log("[AUDIO] de " + telefone + " — pedindo para mandar por texto");
+      try { await enviarMensagem(telefone, "Oi! 😊 Por aqui ainda não consigo ouvir áudios. Pode me mandar sua mensagem por *texto*? Aí te ajudo rapidinho!"); } catch (e) {}
+      return res.status(200).json({ ok: true });
+    }
+
     const mensagem = body.text && body.text.message ? body.text.message : body.text;
     if (!telefone || !mensagem || typeof mensagem !== "string" || mensagem.trim() === "") return res.status(200).json({ ok: true });
 
