@@ -1183,7 +1183,9 @@ app.post("/webhook", async (req, res) => {
     if (tipoCardapio) {
       const inteiro = { fracionar: false };
       if (tipoCardapio === "drinks") {
+        // Bebidas = drinks + doses (cachaças, rum, tequila...) juntos
         await enviarMensagem(telefone, CARDAPIO_DRINKS, inteiro);
+        await enviarMensagem(telefone, CARDAPIO_DOSES, inteiro);
       } else if (tipoCardapio === "vinhos") {
         await enviarMensagem(telefone, CARDAPIO_VINHOS, inteiro);
       } else if (tipoCardapio === "doses") {
@@ -1191,9 +1193,10 @@ app.post("/webhook", async (req, res) => {
       } else if (tipoCardapio === "comidas") {
         await enviarMensagem(telefone, CARDAPIO_COMIDAS, inteiro);
       } else if (tipoCardapio === "completo") {
+        // Bebidas (drinks + doses) primeiro, depois vinhos e comidas
         await enviarMensagem(telefone, CARDAPIO_DRINKS, inteiro);
-        await enviarMensagem(telefone, CARDAPIO_VINHOS, inteiro);
         await enviarMensagem(telefone, CARDAPIO_DOSES, inteiro);
+        await enviarMensagem(telefone, CARDAPIO_VINHOS, inteiro);
         await enviarMensagem(telefone, CARDAPIO_COMIDAS, inteiro);
       }
       return res.status(200).json({ ok: true });
