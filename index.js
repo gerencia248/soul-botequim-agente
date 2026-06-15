@@ -214,6 +214,50 @@ function instrucaoDelivery(texto) {
     LINK_IFOOD;
 }
 
+// ── RESOLVER DE DIAS DA SEMANA (nome do dia → DATA exata) ────
+// Sentido inverso do diaSemanaDeData: quando o cliente cita um DIA DA
+// SEMANA ("que dia e sabado?", "sexta que vem", "amanha"), calculamos
+// a DATA exata deterministicamente e injetamos no contexto, pra Luz
+// nunca errar a conta (ex.: dizia que sabado era 19/06 quando era 20/06).
+function resolverDiasSemana(texto) {
+  if (!texto) return "";
+  const t = texto.toLowerCase();
+  const agora = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const fmt = (d) => d.toLocaleDateString("pt-BR");
+  const porData = new Map(); // dataStr -> { label, nomeDia }
+  const reg = (label, d) => { const k = fmt(d); if (!porData.has(k)) porData.set(k, { label, nomeDia: NOMES_DIAS_SEMANA[d.getDay()] }); };
+
+  if (/\bhoje\b/.test(t)) reg("hoje", hoje);
+  if (/\bdepois de amanh[ãa]\b/.test(t)) { const d = new Date(hoje); d.setDate(d.getDate() + 2); reg("depois de amanhã", d); }
+  else if (/\bamanh[ãa]\b/.test(t)) { const d = new Date(hoje); d.setDate(d.getDate() + 1); reg("amanhã", d); }
+
+  const semana = [
+    { nome: "domingo",       idx: 0, re: /\bdomingo\b/,            base: "domingo" },
+    { nome: "segunda-feira", idx: 1, re: /\bsegunda(-feira)?\b/,   base: "segunda" },
+    { nome: "terça-feira",   idx: 2, re: /\bter[çc]a(-feira)?\b/,  base: "ter[çc]a" },
+    { nome: "quarta-feira",  idx: 3, re: /\bquarta(-feira)?\b/,    base: "quarta" },
+    { nome: "quinta-feira",  idx: 4, re: /\bquinta(-feira)?\b/,    base: "quinta" },
+    { nome: "sexta-feira",   idx: 5, re: /\bsexta(-feira)?\b/,     base: "sexta" },
+    { nome: "sábado",        idx: 6, re: /\bs[áa]bado\b/,          base: "s[áa]bado" },
+  ];
+  for (const s of semana) {
+    if (!s.re.test(t)) continue;
+    let delta = (s.idx - hoje.getDay() + 7) % 7; // 0 = hoje
+    // "X que vem" / "próximo X" → semana seguinte
+    const proxima = new RegExp(s.base + "[^.]{0,15}(que vem|próxim|proxim)").test(t)
+      || new RegExp("(próxim|proxim)\\w*\\s+" + s.base).test(t);
+    if (proxima) delta += 7;
+    const d = new Date(hoje); d.setDate(d.getDate() + delta);
+    reg(s.nome, d);
+  }
+  if (porData.size === 0) return "";
+  const linhas = [...porData.entries()].map(([data, v]) => `- "${v.label}" => ${data} (${v.nomeDia})`);
+  return "\n\nINFO DETERMINISTICA (DIAS DA SEMANA CITADOS PELO CLIENTE):\n" +
+    "O sistema JA calculou a DATA exata de cada dia citado. Use EXATAMENTE estas datas, NUNCA recalcule por conta propria:\n" +
+    linhas.join("\n");
+}
+
 // ── EXTRATOR DE QUANTIDADE DE PESSOAS ───────────────────────
 // Pega "30 pessoas", "umas 40", "por volta de 50", "30 a 40 convidados"
 function extrairQuantidadePessoas(texto) {
@@ -908,12 +952,13 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   // BLINDAGEM ADICIONAL: se o cliente mencionou alguma data na ultima mensagem,
   // calculamos deterministicamente o dia da semana e injetamos no contexto.
   const ancoraDatas = formatarContextoDatas(mensagemUsuario);
+  const ancoraSemana = resolverDiasSemana(mensagemUsuario);
   const ancoraDelivery = instrucaoDelivery(mensagemUsuario);
 
   const mensagensComAncora = [
     {
       role: "user",
-      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas + ancoraDelivery
+      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas + ancoraSemana + ancoraDelivery
     },
     {
       role: "assistant",
