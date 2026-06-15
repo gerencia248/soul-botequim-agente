@@ -156,11 +156,17 @@ function detectarDatasNaMensagem(texto) {
 
 function diaSemanaDeData(dia, mes, ano) {
   const agora = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  // Compara apenas a DATA (meia-noite), nunca a hora. Sem isso, uma data de HOJE
+  // (ex.: cliente cita "06/06" no próprio dia 06/06) era tratada como "já passou" —
+  // porque candidato fica à meia-noite e agora já passou da meia-noite — e o ano
+  // rolava pro seguinte, retornando o dia da semana ERRADO (06/06/2026=sábado virava
+  // 06/06/2027=domingo). Normalizar pra meia-noite corrige.
+  const hojeMeiaNoite = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
   let anoUsar = ano;
   if (!anoUsar) {
     anoUsar = agora.getFullYear();
     const candidato = new Date(anoUsar, mes - 1, dia);
-    if (candidato < agora) anoUsar++; // se data já passou este ano, assume próximo
+    if (candidato < hojeMeiaNoite) anoUsar++; // só rola pro próximo ano se a data REALMENTE já passou
   }
   const d = new Date(anoUsar, mes - 1, dia);
   if (isNaN(d.getTime())) return null;
@@ -185,6 +191,27 @@ function formatarContextoDatas(texto) {
     "O sistema calculou o dia da semana exato pra cada data citada:\n" +
     linhas.join("\n") +
     "\n\nUSE estas informacoes ao falar sobre as datas. NUNCA pergunte ao cliente em que dia da semana uma data cai — o sistema ja calculou.";
+}
+
+// ── DETECTOR DE DELIVERY/ENTREGA ─────────────────────────────
+// Quando o cliente pergunta sobre delivery/entrega, injetamos a instrucao
+// deterministica com o link do iFood, garantindo que a Luz sempre encaminhe.
+const LINK_IFOOD = "https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741";
+function mencionaDelivery(texto) {
+  if (!texto) return false;
+  const t = texto.toLowerCase();
+  return [
+    "delivery", "entrega", "entregam", "entregar", "entregue",
+    "ifood", "i food", "pra viagem", "para viagem", "viagem",
+    "pedir em casa", "pedido em casa", "leva em casa", "levam em casa",
+    "tele entrega", "tele-entrega", "vocês entregam", "voces entregam", "voce entrega"
+  ].some(k => t.includes(k));
+}
+function instrucaoDelivery(texto) {
+  if (!mencionaDelivery(texto)) return "";
+  return "\n\nINSTRUCAO DETERMINISTICA (DELIVERY): O cliente perguntou sobre delivery/entrega. " +
+    "Responda de forma curta e simpatica que SIM, fazemos entrega pelo iFood, e mande o link PURO (sem ** sem colchetes): " +
+    LINK_IFOOD;
 }
 
 // ── EXTRATOR DE QUANTIDADE DE PESSOAS ───────────────────────
@@ -828,6 +855,7 @@ INFORMAÇÕES DO BAR:
 - Temos projetor e televisão | Transmitimos jogos de futebol e outros esportes
 - Temos opções veganas no cardápio
 - Não temos petisco para animais (pet friendly apenas para a presença dos pets)
+- DELIVERY/ENTREGA: fazemos entrega pelo iFood. Link do cardápio e pedidos: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
 
 DRINKS AUTORAIS: Corsário, Dama da Noite, Carcarah, Amarelo Manga, Jacira, Caju Amigo, Macunaíma, Soul Punch, Bitter Giuseppe
 DRINKS CLÁSSICOS: Fitzgerald, Negroni, Mojito, Caipirinha, El Diablo, Hibiscus Margarita, Aperol Spritz
@@ -851,7 +879,13 @@ FLUXO DE RESERVA (SEGUIR À RISCA):
     Confirme em 1 linha e mande o link puro: https://widget.getinapp.com.br/d6NZKJ6V
     Em seguida peça follow-up: "Me avisa aqui quando confirmar, beleza?"
 - NUNCA mande o link de reserva mais de uma vez na mesma conversa
-- O link deve sempre aparecer puro, SEM ** ao redor, SEM colchetes`;
+- O link deve sempre aparecer puro, SEM ** ao redor, SEM colchetes
+
+FLUXO DE DELIVERY/ENTREGA (SEGUIR À RISCA):
+- Se o cliente perguntar sobre delivery, entrega, "vocês entregam?", "fazem delivery?", "dá pra pedir pra viagem", "pedir em casa" ou similar:
+    Responda de forma curta e simpática que SIM, fazemos entrega pelo iFood, e mande o link puro: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
+- Mande o link puro, SEM ** ao redor, SEM colchetes, SEM parênteses
+- Ex.: "Fazemos sim! 😊 É só pedir pelo nosso iFood aqui: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741"`;
 }
 
 // ============================================================
@@ -874,11 +908,12 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   // BLINDAGEM ADICIONAL: se o cliente mencionou alguma data na ultima mensagem,
   // calculamos deterministicamente o dia da semana e injetamos no contexto.
   const ancoraDatas = formatarContextoDatas(mensagemUsuario);
+  const ancoraDelivery = instrucaoDelivery(mensagemUsuario);
 
   const mensagensComAncora = [
     {
       role: "user",
-      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas
+      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas + ancoraDelivery
     },
     {
       role: "assistant",
