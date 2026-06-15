@@ -975,12 +975,44 @@ function sanitizarParaWhatsApp(texto) {
     .trim();
 }
 
+// ── ENVIO FRACIONADO ─────────────────────────────────────────
+// Quebra a resposta em mensagens menores e envia em sequência com
+// uma pequena pausa, deixando o atendimento mais humano (como uma
+// pessoa digitando aos poucos). Mantém URLs sempre inteiras.
+function dividirEmMensagens(texto) {
+  if (!texto) return [];
+  // 1) Quebra por parágrafos (linhas em branco / quebras de linha)
+  const blocos = texto.split(/\n\s*\n|\n/).map(b => b.trim()).filter(Boolean);
+  // 2) Blocos muito longos (e SEM link) são divididos por frase
+  const LIMITE = 170;
+  const partes = [];
+  for (const bloco of blocos) {
+    if (bloco.length <= LIMITE || /https?:\/\//.test(bloco)) { partes.push(bloco); continue; }
+    const frases = bloco.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [bloco];
+    let buffer = "";
+    for (const f of frases) {
+      if (buffer && (buffer + f).length > LIMITE) { partes.push(buffer.trim()); buffer = f; }
+      else buffer += f;
+    }
+    if (buffer.trim()) partes.push(buffer.trim());
+  }
+  return partes.length ? partes : [texto.trim()];
+}
+
 // ── ENVIAR MENSAGEM ──────────────────────────────────────────
 async function enviarMensagem(telefone, texto) {
   const textoFinal = sanitizarParaWhatsApp(texto);
+  const partes = dividirEmMensagens(textoFinal);
   const url = "https://api.z-api.io/instances/" + CONFIG.ZAPI_INSTANCE_ID + "/token/" + CONFIG.ZAPI_TOKEN + "/send-text";
-  await axios.post(url, { phone: telefone, message: textoFinal },
-    { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } });
+  for (let i = 0; i < partes.length; i++) {
+    await axios.post(url, { phone: telefone, message: partes[i] },
+      { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } });
+    // Pausa entre mensagens (não após a última), proporcional ao tamanho — simula digitação
+    if (i < partes.length - 1) {
+      const espera = Math.min(2500, 600 + partes[i].length * 25);
+      await new Promise(r => setTimeout(r, espera));
+    }
+  }
 }
 
 // ── WEBHOOK ──────────────────────────────────────────────────
