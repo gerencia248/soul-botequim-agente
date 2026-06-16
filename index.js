@@ -728,11 +728,14 @@ function querVeganoVegetariano(t) {
 
 function querCardapio(t) {
   const txt = t.toLowerCase();
-  if (["cardápio","cardapio","menu","o que tem","o que vocês servem","o que voces servem","o que tem pra comer","o que tem pra beber"].some(g => txt.includes(g))) return "completo";
-  if (["drink","drinque","drinks","cocktail","coquetél","coquetel","bebida","bebidas"].some(g => txt.includes(g)) && !["vinho","dose","cachaça"].some(g => txt.includes(g))) return "drinks";
+  // PRIMEIRO as categorias ESPECÍFICAS — assim "cardápio de comida" manda só comida,
+  // "cardápio de vinho" só vinho, etc. (antes a palavra "cardápio" caía no completo).
   if (["vinho","vinhos","carta de vinho","carta de vinhos","wine"].some(g => txt.includes(g))) return "vinhos";
   if (["dose","doses","cachaça","cachaca","whisky","whiskey","rum","tequila","vodka"].some(g => txt.includes(g))) return "doses";
   if (["comida","comer","petisco","petiscos","lanche","lanches","food","prato","proteína"].some(g => txt.includes(g))) return "comidas";
+  if (["drink","drinque","drinks","cocktail","coquetél","coquetel","bebida","bebidas"].some(g => txt.includes(g))) return "drinks";
+  // SÓ DEPOIS o completo — quando pede "cardápio"/"menu" sem citar uma categoria.
+  if (["cardápio","cardapio","menu","o que tem","o que vocês servem","o que voces servem","o que tem pra comer","o que tem pra beber"].some(g => txt.includes(g))) return "completo";
   return null;
 }
 
