@@ -18,6 +18,7 @@ const CONFIG = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   PORT: process.env.PORT || 3000,
   NUMERO_DOURADO: "5511954657178",
+  NUMERO_ITALO: "5511953580917", // fornecedores e entregadores
 };
 
 // ── REDIS ────────────────────────────────────────────────────
@@ -749,6 +750,23 @@ function pedeSugestao(t) {
   ].some(g => txt.includes(g));
 }
 
+// Quem está falando é FORNECEDOR ou ENTREGADOR (não é cliente do bar).
+// Obs.: usa "entregador" e termos de fornecimento — NÃO usa só "entrega"
+// (pra não confundir com cliente perguntando sobre delivery/iFood).
+function ehFornecedorOuEntregador(t) {
+  if (!t) return false;
+  const txt = t.toLowerCase();
+  return [
+    "fornecedor","fornecedora","fornecimento","fornecer",
+    "entregador","entregadora","motoboy","motoqueiro",
+    "transportadora","transportador","distribuidora","distribuidor",
+    "representante comercial","sou representante","mercadoria","mercadorias",
+    "vim entregar","vim fazer entrega","trazer a entrega","entrega de mercadoria",
+    "cheguei com a entrega","na portaria","pedido de compra","abastecimento",
+    "reposição","reposicao","descarregar"
+  ].some(g => txt.includes(g));
+}
+
 // Mensagem fala de COMIDA (pra não responder com pergunta de drink).
 function falaDeComida(t) {
   if (!t) return false;
@@ -905,6 +923,7 @@ INFORMAÇÕES DO BAR:
 - Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP
 - *Telefone do bar* (atendimento geral, reservas pelo widget): (11) 95498-7240
 - *WhatsApp do gerente Dourado* (eventos, grupos grandes, casos especiais): (11) 95465-7178
+- *Fornecedores e entregadores*: direcione SEMPRE para o Ítalo (11) 95358-0917 (responsável por compras/entregas)
 - Instagram: @soulbotequim
 - ATENÇÃO: o telefone do bar e o WhatsApp do Dourado são DIFERENTES. Nunca confunda. Quando precisar passar contato do Dourado, use SEMPRE (11) 95465-7178.
 - Pet friendly | Área externa | Acesso para cadeirantes | Wi-Fi | Banheiro adaptado para cadeirantes
@@ -1119,6 +1138,17 @@ app.post("/webhook", async (req, res) => {
     if (!telefone || !mensagem || typeof mensagem !== "string" || mensagem.trim() === "") return res.status(200).json({ ok: true });
 
     console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] De " + telefone + ": " + mensagem);
+
+    // ── FORNECEDOR / ENTREGADOR → encaminha para o Ítalo ──
+    if (ehFornecedorOuEntregador(mensagem)) {
+      console.log("[FORNECEDOR/ENTREGADOR] de " + telefone + " → Ítalo");
+      await enviarMensagem(telefone, "Olá! 😊 Para *fornecedores e entregas*, por favor fale direto com o nosso responsável *Ítalo* no (11) 95358-0917. Ele cuida disso e vai te atender certinho!");
+      try {
+        await enviarMensagem(CONFIG.NUMERO_ITALO,
+          "📦 *Fornecedor/Entregador entrou em contato*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 200) + "\"");
+      } catch (e) { console.error("Erro ao avisar Ítalo:", e.message); }
+      return res.status(200).json({ ok: true });
+    }
 
     if (estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return res.status(200).json({ ok: true }); }
     if (estaNoFluxoLeadDourado(telefone)) { await processarFluxoLeadDourado(telefone, mensagem); return res.status(200).json({ ok: true }); }
