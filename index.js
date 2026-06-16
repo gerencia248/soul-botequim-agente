@@ -1139,6 +1139,12 @@ app.post("/webhook", async (req, res) => {
     const body = req.body;
     if (body.fromMe) return res.status(200).json({ ok: true });
     if (body.isGroup) return res.status(200).json({ ok: true });
+    // Ignora CANAIS / NEWSLETTERS / BROADCAST / STATUS — não são clientes reais.
+    // (Ex.: "120363...@newsletter" estava virando lead-lixo e gastando IA à toa.)
+    if (body.isNewsletter || body.isBroadcast || body.broadcast ||
+        /@(newsletter|broadcast)|status@|@g\.us/i.test(String(body.phone || body.chatId || body.chatLid || ""))) {
+      return res.status(200).json({ ok: true });
+    }
     if (body.type && body.type !== "ReceivedCallback") return res.status(200).json({ ok: true });
 
     const msgId = body.messageId || body.id;
