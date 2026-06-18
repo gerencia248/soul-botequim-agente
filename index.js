@@ -974,7 +974,7 @@ INFORMAÇÕES DO BAR:
 - Sem voucher/vale-alimentação
 - Pagamento: crédito (sem parcelamento), débito, Pix, dinheiro, Amex
 - Temos projetor e televisão | Transmitimos jogos de futebol e outros esportes
-- COPA DO MUNDO: vamos transmitir TODOS os jogos do Brasil durante a Copa, no projetor e na TV! 🇧🇷 Quando o cliente perguntar sobre jogo do Brasil/Copa, confirme com animação e convide a garantir a mesa/reserva (grupos até 30 pelo link do GetinApp).
+- COPA DO MUNDO: vamos transmitir TODOS os jogos da Copa (não só os do Brasil), no projetor e na TV! ⚽🌍 Quando o cliente perguntar sobre qualquer jogo da Copa (Brasil ou outras seleções), confirme com animação que vamos passar e convide a garantir a mesa/reserva (grupos até 30 pelo link do GetinApp).
 - Temos opções veganas no cardápio
 - Não temos petisco para animais (pet friendly apenas para a presença dos pets)
 - DELIVERY/ENTREGA: fazemos entrega pelo iFood. Link do cardápio e pedidos: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
