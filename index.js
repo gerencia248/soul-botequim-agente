@@ -21,6 +21,15 @@ const CONFIG = {
   NUMERO_ITALO: "5511953580917", // fornecedores e entregadores
 };
 
+// ── ACESSO AO PAINEL (auditoria/dashboard) ──
+// Se DASHBOARD_TOKEN estiver definido (Railway > Variables), exige ?token=SEGREDO.
+// Senão, mantém o acesso por ?phone=NUMERO_DOURADO (compatível com o link atual).
+const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || null;
+function painelAutorizado(req) {
+  if (DASHBOARD_TOKEN) return !!req.query && req.query.token === DASHBOARD_TOKEN;
+  return !!req.query && req.query.phone === CONFIG.NUMERO_DOURADO;
+}
+
 // ── REDIS ────────────────────────────────────────────────────
 const redis = new Redis(process.env.REDIS_URL);
 redis.on("connect", () => console.log("✅ Redis conectado!"));
@@ -280,16 +289,18 @@ function extrairQuantidadePessoas(texto) {
 function querEventoOuFestaPessoal(t) {
   if (!t) return false;
   const txt = t.toLowerCase();
+  // Só eventos PESSOAIS específicos vão pro Dourado independente do tamanho.
+  // "festa"/"comemoração" genéricos foram removidos: "festa de 10 amigos" deve ir
+  // pelo GetinApp normal (até 30), não pro Dourado.
   return [
     "aniversário","aniversario","casamento","bodas","formatura","despedida de solteiro",
     "despedida de solteira","chá de bebê","cha de bebe","chá de panela","cha de panela",
-    "festa","comemoração","comemoracao","celebração","celebracao","bate-papo de noivos",
+    "bate-papo de noivos",
     "evento privado","evento particular","reservar o bar","fechar o bar","fechamento do bar"
   ].some(g => txt.includes(g));
 }
 
-// ── FLUXO DE EVENTOS CORPORATIVOS ───────────────────────────
-const fluxoEventos = {};
+// ── FLUXO DE EVENTOS CORPORATIVOS (persistido no Redis) ─────
 const ETAPAS_EVENTO = [
   { campo: "nome",      pergunta: "Qual é o seu nome?" },
   { campo: "empresa",   pergunta: "Qual é o nome da sua empresa?" },
@@ -299,18 +310,20 @@ const ETAPAS_EVENTO = [
   { campo: "orcamento", pergunta: "Qual é o orçamento aproximado?" },
 ];
 
-function iniciarFluxoEvento(telefone) {
-  fluxoEventos[telefone] = { etapa: 0, dados: {} };
+async function iniciarFluxoEvento(telefone) {
+  await salvarFluxo("evento", telefone, { etapa: 0, dados: {} });
 }
-function estaNoFluxoEvento(telefone) {
-  return fluxoEventos[telefone] !== undefined;
+async function estaNoFluxoEvento(telefone) {
+  return await temFluxo("evento", telefone);
 }
 async function processarFluxoEvento(telefone, mensagem) {
-  const fluxo = fluxoEventos[telefone];
+  const fluxo = await carregarFluxo("evento", telefone);
+  if (!fluxo) return;
   const etapaAtual = ETAPAS_EVENTO[fluxo.etapa];
   fluxo.dados[etapaAtual.campo] = mensagem;
   fluxo.etapa++;
   if (fluxo.etapa < ETAPAS_EVENTO.length) {
+    await salvarFluxo("evento", telefone, fluxo);
     await enviarMensagem(telefone, ETAPAS_EVENTO[fluxo.etapa].pergunta);
     return;
   }
@@ -319,7 +332,7 @@ async function processarFluxoEvento(telefone, mensagem) {
   const eventos = await carregarEventos();
   eventos[id] = { telefone, ...d, criadoEm: new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) };
   await salvarEventos(eventos);
-  delete fluxoEventos[telefone];
+  await apagarFluxo("evento", telefone);
   await enviarMensagem(telefone, "Perfeito! Recebi todas as informações. Nosso gerente Dourado entrará em contato em breve para montar o pacote ideal. Qualquer dúvida, estou à disposição!");
   await enviarMensagem(CONFIG.NUMERO_DOURADO,
     "🎉 *NOVO LEAD — Evento Corporativo*\n\n" +
@@ -333,7 +346,6 @@ async function processarFluxoEvento(telefone, mensagem) {
 // info parcial pro Dourado imediatamente, a Luz primeiro coleta TODOS os
 // dados estruturados (nome, tipo, data, pessoas, horário, obs) e só DEPOIS
 // encaminha o lead COMPLETO. Otimiza o tempo do Dourado.
-const fluxoLeadDourado = {};
 const ETAPAS_LEAD_DOURADO = [
   { campo: "nome",        pergunta: "Beleza, deixa eu anotar tudo certinho pro Dourado já te chamar com tudo pronto. Primeiro: qual é o seu nome?" },
   { campo: "tipoEvento",  pergunta: "Que tipo de comemoração ou evento é? (aniversário, casamento, formatura, festa entre amigos, etc.)" },
@@ -343,21 +355,21 @@ const ETAPAS_LEAD_DOURADO = [
   { campo: "observacoes", pergunta: "Por último: tem alguma preferência ou pedido especial? (decoração, cardápio personalizado, espaço reservado, bolo, etc.) Se não tiver nada específico, é só dizer 'nenhuma'." },
 ];
 
-function estaNoFluxoLeadDourado(telefone) {
-  return fluxoLeadDourado[telefone] !== undefined;
+async function estaNoFluxoLeadDourado(telefone) {
+  return await temFluxo("lead", telefone);
 }
 
 async function iniciarFluxoLeadDourado(telefone, dadosIniciais) {
-  fluxoLeadDourado[telefone] = {
+  await salvarFluxo("lead", telefone, {
     etapa: -1,
     dados: dadosIniciais || {},
     iniciadoEm: new Date().toISOString()
-  };
+  });
   await avancarFluxoLeadDourado(telefone, null);
 }
 
 async function avancarFluxoLeadDourado(telefone, respostaAtual) {
-  const fluxo = fluxoLeadDourado[telefone];
+  const fluxo = await carregarFluxo("lead", telefone);
   if (!fluxo) return;
 
   // Guarda resposta da etapa atual (só se já fez ao menos uma pergunta)
@@ -374,11 +386,13 @@ async function avancarFluxoLeadDourado(telefone, respostaAtual) {
       fluxo.etapa++;
       continue;
     }
+    await salvarFluxo("lead", telefone, fluxo); // salva o progresso ANTES de perguntar
     await enviarMensagem(telefone, etapa.pergunta);
     return;
   }
 
-  // Fluxo completo → finaliza
+  // Fluxo completo → salva (com a última resposta) e finaliza
+  await salvarFluxo("lead", telefone, fluxo);
   await finalizarLeadDourado(telefone);
 }
 
@@ -387,7 +401,7 @@ async function processarFluxoLeadDourado(telefone, mensagem) {
   const t = String(mensagem).toLowerCase();
   const cancelar = ["cancelar","desistir","deixa pra la","deixa pra lá","esqueci","esquece","não quero mais","nao quero mais","parar","sai dessa"];
   if (cancelar.some(g => t.includes(g))) {
-    delete fluxoLeadDourado[telefone];
+    await apagarFluxo("lead", telefone);
     await enviarMensagem(telefone, "Tudo bem! Se mudar de ideia depois, é só me chamar. 🍻");
     return;
   }
@@ -395,7 +409,7 @@ async function processarFluxoLeadDourado(telefone, mensagem) {
 }
 
 async function finalizarLeadDourado(telefone) {
-  const fluxo = fluxoLeadDourado[telefone];
+  const fluxo = await carregarFluxo("lead", telefone);
   if (!fluxo) return;
   const d = fluxo.dados;
 
@@ -436,7 +450,7 @@ async function finalizarLeadDourado(telefone) {
   });
 
   // 4) Limpa o fluxo
-  delete fluxoLeadDourado[telefone];
+  await apagarFluxo("lead", telefone);
 }
 
 // ── MEMÓRIA DE CONVERSAS ─────────────────────────────────────
@@ -455,6 +469,26 @@ async function jaProcessou(msgId) {
     const resultado = await redis.set("msg:" + msgId, "1", "EX", 86400, "NX");
     return resultado === null;
   } catch (e) { return false; }
+}
+
+// ── ESTADO DE FLUXO (persistido no Redis — sobrevive a restart) ──
+// Antes os fluxos de evento/grupo grande ficavam só na memória: se a Railway
+// reiniciava (todo deploy), o cliente no meio da coleta perdia o progresso.
+// Agora ficam no Redis, com TTL que expira fluxos abandonados sozinho.
+const FLUXO_TTL = 3600; // 1h de inatividade -> expira automaticamente
+async function carregarFluxo(tipo, telefone) {
+  try { const v = await redis.get("fluxo:" + tipo + ":" + telefone); return v ? JSON.parse(v) : null; }
+  catch (e) { return null; }
+}
+async function salvarFluxo(tipo, telefone, fluxo) {
+  try { await redis.set("fluxo:" + tipo + ":" + telefone, JSON.stringify(fluxo), "EX", FLUXO_TTL); }
+  catch (e) { console.error("Erro ao salvar fluxo:", e.message); }
+}
+async function apagarFluxo(tipo, telefone) {
+  try { await redis.del("fluxo:" + tipo + ":" + telefone); } catch (e) {}
+}
+async function temFluxo(tipo, telefone) {
+  try { return (await redis.exists("fluxo:" + tipo + ":" + telefone)) === 1; } catch (e) { return false; }
 }
 
 // ── CARDÁPIOS COMPLETOS ──────────────────────────────────────
@@ -910,11 +944,10 @@ ESCOPO:
 - Você é atendente de bar, NÃO terapeuta ou conselheiro
 - NUNCA invente informações que não estão neste prompt
 
-DATA E HORA ATUAL (use sempre que precisar informar dia da semana, data ou horário):
-${getDataAtual()}
-
-HORÁRIO ATUAL:
-${getTextoHorario()}
+DATA E HORA ATUAL:
+A data/hora de HOJE e o status do bar (aberto/fechado) chegam SEMPRE no início
+de cada conversa, na "INSTRUCAO OBRIGATORIA DO SISTEMA" (campos "HOJE E" e
+"STATUS DO BAR AGORA"). Use SEMPRE esses valores; NUNCA invente data/hora.
 
 HORÁRIOS DE FUNCIONAMENTO:
 - Terça, Quarta, Quinta: 16h até meia-noite
@@ -1050,7 +1083,9 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
       {
         model: "claude-sonnet-4-6",
         max_tokens: 1024,
-        system: getSYSTEM_PROMPT(),
+        // Cache do prompt (cardápio + regras são fixos): a 1ª msg da conversa
+        // "escreve" o cache e as seguintes (em ate 5 min) leem por ~10% do custo.
+        system: [{ type: "text", text: getSYSTEM_PROMPT(), cache_control: { type: "ephemeral" } }],
         messages: mensagensComAncora
       },
       {
@@ -1182,8 +1217,8 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    if (estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return res.status(200).json({ ok: true }); }
-    if (estaNoFluxoLeadDourado(telefone)) { await processarFluxoLeadDourado(telefone, mensagem); return res.status(200).json({ ok: true }); }
+    if (await estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return res.status(200).json({ ok: true }); }
+    if (await estaNoFluxoLeadDourado(telefone)) { await processarFluxoLeadDourado(telefone, mensagem); return res.status(200).json({ ok: true }); }
 
     // ── GRUPO GRANDE (acima de 30) OU EVENTO PESSOAL → encaminha pro Dourado ──
     // Regra: ATÉ 30 pessoas (inclusive) → fluxo normal pelo GetinApp.
@@ -1252,7 +1287,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     if (querEventoCorporativo(mensagem)) {
-      iniciarFluxoEvento(telefone);
+      await iniciarFluxoEvento(telefone);
       await enviarMensagem(telefone, "Ótimo! Ficamos felizes em receber sua empresa no Soul Botequim!\n\nVou precisar de algumas informações para montar o melhor pacote para vocês.\n\n" + ETAPAS_EVENTO[0].pergunta);
       return res.status(200).json({ ok: true });
     }
@@ -1478,8 +1513,8 @@ function rodarTestesHorario() {
 // ── ENDPOINT DE AUDITORIA: /test-horarios?phone=NUMERO_DOURADO ──
 app.get("/test-horarios", async (req, res) => {
   const { phone } = req.query;
-  if (phone !== CONFIG.NUMERO_DOURADO) {
-    return res.status(403).send("Acesso negado");
+  if (!painelAutorizado(req)) {
+    return res.status(403).send("Acesso negado. Use ?phone=NUMERO_DO_GERENTE (ou ?token=SEGREDO se configurado).");
   }
   const resultados = rodarTestesHorario();
   const passou = resultados.filter(r => r.ok).length;
@@ -1562,20 +1597,7 @@ setInterval(async () => {
   } catch (e) { console.error("[LEMBRETE] Loop:", e.message); }
 }, 10 * 60 * 1000);
 
-// Limpa fluxos de lead-dourado abandonados (>1h sem resposta)
-setInterval(() => {
-  try {
-    const agora = Date.now();
-    for (const tel of Object.keys(fluxoLeadDourado)) {
-      const fluxo = fluxoLeadDourado[tel];
-      const idadeMin = (agora - new Date(fluxo.iniciadoEm).getTime()) / 60000;
-      if (idadeMin > 60) {
-        delete fluxoLeadDourado[tel];
-        console.log("[FLUXO-LEAD] Limpeza: fluxo abandonado de " + tel + " (" + idadeMin.toFixed(0) + " min)");
-      }
-    }
-  } catch (e) { console.error("[FLUXO-LEAD CLEANUP]:", e.message); }
-}, 15 * 60 * 1000); // checa a cada 15 min
+// (Fluxos abandonados agora expiram sozinhos pelo TTL do Redis — ver FLUXO_TTL.)
 
 // Marca leads pendentes "perdidos" após 24h (limpeza diária)
 setInterval(async () => {
@@ -1598,9 +1620,8 @@ setInterval(async () => {
 // Acesse: GET /dashboard?phone=5511954657178 (número do Dourado)
 app.get("/dashboard", async (req, res) => {
   try {
-    const { phone } = req.query;
-    if (phone !== CONFIG.NUMERO_DOURADO) {
-      return res.status(403).send("Acesso negado. Use ?phone=NUMERO_DO_GERENTE");
+    if (!painelAutorizado(req)) {
+      return res.status(403).send("Acesso negado. Use ?phone=NUMERO_DO_GERENTE (ou ?token=SEGREDO se configurado).");
     }
     const leads = await listarLeads();
     const eventos = await carregarEventos();
@@ -1669,6 +1690,7 @@ app.get("/dashboard", async (req, res) => {
   <div class="card"><h3>Taxa de conversão</h3><div class="num">${taxa}%</div></div>
   <div class="card"><h3>Eventos corporativos</h3><div class="num">${Object.keys(eventos).length}</div></div>
 </div>
+<p style="color:#888;font-size:13px;margin:8px 0 16px">ℹ️ <b>Confirmadas</b> conta só quem avisou a confirmação aqui no chat. A maioria dos clientes confirma direto no widget do GetinApp (fora do bot), então esse número e a "taxa de conversão" ficam naturalmente baixos — não significa que as reservas não aconteceram.</p>
 <h2>Reservas (últimos 7 dias)</h2>
 ${leads.length ? `<table><thead><tr><th>Telefone</th><th>Pessoas</th><th>Dia</th><th>Status</th><th>Pedido em</th><th>Lembrete</th><th>Confirmado em</th></tr></thead><tbody>${linhasLeads}</tbody></table>` : '<div class="empty">Nenhuma reserva ainda</div>'}
 <h2>Eventos corporativos</h2>
@@ -1685,9 +1707,8 @@ ${Object.keys(eventos).length ? `<table><thead><tr><th>Nome</th><th>Empresa</th>
 // que a integração com o número dele está funcionando.
 // Acesse: GET /test-dourado?phone=5511954657178
 app.get("/test-dourado", async (req, res) => {
-  const { phone } = req.query;
-  if (phone !== CONFIG.NUMERO_DOURADO) {
-    return res.status(403).send("Acesso negado. Use ?phone=NUMERO_DO_GERENTE");
+  if (!painelAutorizado(req)) {
+    return res.status(403).send("Acesso negado. Use ?phone=NUMERO_DO_GERENTE (ou ?token=SEGREDO se configurado).");
   }
   try {
     const agora = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -1716,6 +1737,9 @@ app.get("/test-dourado", async (req, res) => {
 // Acesse: GET /limpar-historico?telefone=5511999999999
 app.get("/limpar-historico", async (req, res) => {
   try {
+    if (!painelAutorizado(req)) {
+      return res.status(403).json({ erro: "Acesso negado. Use ?phone=NUMERO_DO_GERENTE (ou ?token=SEGREDO)." });
+    }
     const { telefone } = req.query;
     if (!telefone) return res.status(400).json({ erro: "Informe o telefone" });
     await redis.del("memoria:" + telefone);
