@@ -817,12 +817,15 @@ function falaDeComida(t) {
 function naoConseguiuReservar(t) {
   if (!t) return false;
   const txt = t.toLowerCase();
-  const problema = ["não consigo","nao consigo","não consegui","nao consegui","não estou conseguindo",
-    "nao estou conseguindo","não tô conseguindo","nao to conseguindo","não deu","nao deu","deu erro",
-    "não funciona","nao funciona","não funcionou","nao funcionou","não abre","nao abre","não abriu",
-    "nao abriu","não carrega","nao carrega","travou","com erro","dando erro","problema"];
-  const contexto = ["reserv","link","getin","get in","get-in","widget","get-i"];
-  return problema.some(p => txt.includes(p)) && contexto.some(c => txt.includes(c));
+  // Contexto OBRIGATÓRIO: precisa falar do LINK/GETIN/SITE (não basta "reserva",
+  // senão "quero reservar" cairia aqui). Tolera variações de get in / get-in.
+  const contexto = /\blink\b|get\s*-?\s*in|getin|widget|\bsite\b|p[áa]gina/.test(txt);
+  if (!contexto) return false;
+  // Sinal de PROBLEMA/dificuldade — tolerante a erros de digitação
+  // (consigo/consego/consegu, reserva/reseva, etc.). Como o contexto já exige
+  // link/getin, um "não" + link já indica que a reserva online falhou.
+  const problema = /n[ãa]o|erro|trav|problema|ruim|caiu|fora do ar|cons[ei]g|dificuldade|complicad|deu pau|bug/.test(txt);
+  return problema;
 }
 
 // Mensagem enviada quando o cliente não consegue reservar pelo GetIn.
