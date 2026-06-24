@@ -812,6 +812,26 @@ function falaDeComida(t) {
     "proteína","proteina","carne","carnes","sobremesa","beliscar","fome","jantar","almoç"].some(g => txt.includes(g));
 }
 
+// Cliente NÃO CONSEGUIU fazer a reserva pelo GetIn (link com erro / não abre).
+// Precisa de PROBLEMA + CONTEXTO de reserva/link, pra não disparar à toa.
+function naoConseguiuReservar(t) {
+  if (!t) return false;
+  const txt = t.toLowerCase();
+  const problema = ["não consigo","nao consigo","não consegui","nao consegui","não estou conseguindo",
+    "nao estou conseguindo","não tô conseguindo","nao to conseguindo","não deu","nao deu","deu erro",
+    "não funciona","nao funciona","não funcionou","nao funcionou","não abre","nao abre","não abriu",
+    "nao abriu","não carrega","nao carrega","travou","com erro","dando erro","problema"];
+  const contexto = ["reserv","link","getin","get in","get-in","widget","get-i"];
+  return problema.some(p => txt.includes(p)) && contexto.some(c => txt.includes(c));
+}
+
+// Mensagem enviada quando o cliente não consegue reservar pelo GetIn.
+const MSG_RESERVA_FALHOU = `Se você não está conseguindo fazer sua reserva pelo Get In, pode vir tranquilamente para o bar! Teremos vagas disponíveis para assistir ao jogo do Brasil.
+
+Recomendamos apenas que chegue cedo para garantir seu lugar e aproveitar toda a emoção da partida com a gente.
+
+Esperamos você para torcer pelo Brasil em um ambiente animado, com boa comida, bebidas geladas e muita energia positiva!`;
+
 // ============================================================
 // CORREÇÃO HORÁRIO (v2) — getStatusHorario()
 // Lógica HONESTA: o bar fecha exatamente à meia-noite (00h).
@@ -1220,6 +1240,13 @@ app.post("/webhook", async (req, res) => {
 
     if (await estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return res.status(200).json({ ok: true }); }
     if (await estaNoFluxoLeadDourado(telefone)) { await processarFluxoLeadDourado(telefone, mensagem); return res.status(200).json({ ok: true }); }
+
+    // ── CLIENTE NÃO CONSEGUIU RESERVAR PELO GETIN → convite pra vir ao bar ──
+    if (naoConseguiuReservar(mensagem)) {
+      console.log("[RESERVA-FALHOU] " + telefone + " — enviando convite pra vir ao bar");
+      await enviarMensagem(telefone, MSG_RESERVA_FALHOU, { fracionar: false });
+      return res.status(200).json({ ok: true });
+    }
 
     // ── GRUPO GRANDE (acima de 30) OU EVENTO PESSOAL → encaminha pro Dourado ──
     // Regra: ATÉ 30 pessoas (inclusive) → fluxo normal pelo GetinApp.
