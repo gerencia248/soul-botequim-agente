@@ -1007,6 +1007,7 @@ INFORMAÇÕES DO BAR:
 - Instagram: @soulbotequim
 - ATENÇÃO: o telefone do bar e o WhatsApp do Dourado são DIFERENTES. Nunca confunda. Quando precisar passar contato do Dourado, use SEMPRE (11) 95465-7178.
 - Pet friendly | Área externa | Acesso para cadeirantes | Wi-Fi | Banheiro adaptado para cadeirantes
+- Climatização: temos *aquecedores* para os dias frios. NÃO temos ar-condicionado, mas nosso ambiente é super fresco e arejado — fica gostoso o ano todo. Se perguntarem sobre ar-condicionado, diga isso com naturalidade e simpatia (sem ar-condicionado, porém ambiente fresquinho e aquecedores no frio).
 - Sem couvert | Taxa de rolha R$70 | Sem happy hour | Comanda individual
 - Música: Jazz, Blues e Brasilidades — programação no Instagram @soulbotequim
 - Drink mais famoso: Fitzgerald ⭐
