@@ -996,7 +996,8 @@ HORÁRIOS DE FUNCIONAMENTO:
 EVENTO ESPECIAL — JOGO DO BRASIL (SEGUNDA 29/06/2026):
 - Nesta segunda-feira, 29/06/2026, o Soul vai abrir EXCEPCIONALMENTE das 12h às 20h pra transmitir o jogo do Brasil (começa às 14h) no projetor e na TV.
 - É só nesta segunda — nas demais segundas o bar continua fechado.
-- Quando o cliente perguntar sobre o jogo do Brasil de segunda, confirme com animação que vamos abrir e passar o jogo, convide a chegar cedo pra garantir lugar e a reservar pelo GetinApp (grupos até 30): https://widget.getinapp.com.br/d6NZKJ6V
+- ⏰ RESERVAS só até as 12h30 desta segunda (29/06): depois desse horário NÃO aceitamos mais reserva pra esse dia. Quem chegar depois é por ordem de chegada. Avise isso com clareza e incentive o cliente a reservar logo: https://widget.getinapp.com.br/d6NZKJ6V
+- Quando o cliente perguntar sobre o jogo do Brasil de segunda, confirme com animação que vamos abrir e passar o jogo, lembre que a reserva é só até as 12h30 e convide a chegar cedo pra garantir lugar (reserva pelo GetinApp, grupos até 30): https://widget.getinapp.com.br/d6NZKJ6V
 
 INFORMAÇÕES DO BAR:
 - Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP
@@ -1808,9 +1809,9 @@ Passando pra avisar: nesta *segunda-feira (29/06)* vamos abrir *exclusivamente* 
 🕐 Abertura especial: das *12h às 20h*
 ⏰ O jogo começa às *14h*
 
-Chega cedo pra garantir seu lugar! Se quiser, já reserve a mesa: https://widget.getinapp.com.br/d6NZKJ6V
+📌 Reservas só até as *12h30* desta segunda! Depois disso é por ordem de chegada, então garanta a sua: https://widget.getinapp.com.br/d6NZKJ6V
 
-Te esperamos pra torcer com a gente!`;
+Chega cedo pra não perder o lugar e vem torcer com a gente! 🇧🇷`;
 
 app.get("/disparar-jogo", async (req, res) => {
   if (!painelAutorizado(req)) {
