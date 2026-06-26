@@ -860,6 +860,20 @@ function getStatusHorario() {
     motivo
   });
 
+  // ── EVENTO ESPECIAL: Segunda 29/06/2026 — JOGO DO BRASIL ──
+  // Nesta segunda (que normalmente é FECHADA) o bar abre EXCEPCIONALMENTE
+  // das 12h às 20h para transmitir o jogo do Brasil (começa às 14h).
+  // É só NESTA data — as demais segundas seguem fechadas pela regra normal.
+  const y  = data.getFullYear();
+  const mo = String(data.getMonth() + 1).padStart(2, "0");
+  const dd = String(data.getDate()).padStart(2, "0");
+  const hojeStr = `${y}-${mo}-${dd}`;
+  if (hojeStr === "2026-06-29") {
+    if (h >= 12 && h < 20) return { aberto: true, fechaAs: "20h (abertura especial só hoje, pro jogo do Brasil)" };
+    if (h < 12) return fechado("hoje às 12h (abertura especial pro jogo do Brasil)");
+    return fechado("terça-feira às 16h"); // depois das 20h, volta ao normal
+  }
+
   // Madrugada (0h–4h): trata o "fechamos há pouco" apenas quando o dia
   // anterior fechou À MEIA-NOITE (Ter, Qua, Qui, Sex, Sáb).
   // Segunda (fechada o dia todo) e Domingo (fecha às 21h) não geram "há pouco".
@@ -977,6 +991,12 @@ HORÁRIOS DE FUNCIONAMENTO:
 - Sexta e Sábado: 12h até meia-noite
 - Domingo: 12h até 21h
 - Segunda-feira: FECHADO
+- ⚠️ EXCEÇÃO ESPECIAL — Segunda-feira 29/06/2026: ABERTO das 12h às 20h (SÓ nesta segunda!) pra transmitir o JOGO DO BRASIL, que começa às 14h. Nas outras segundas segue fechado.
+
+EVENTO ESPECIAL — JOGO DO BRASIL (SEGUNDA 29/06/2026):
+- Nesta segunda-feira, 29/06/2026, o Soul vai abrir EXCEPCIONALMENTE das 12h às 20h pra transmitir o jogo do Brasil (começa às 14h) no projetor e na TV.
+- É só nesta segunda — nas demais segundas o bar continua fechado.
+- Quando o cliente perguntar sobre o jogo do Brasil de segunda, confirme com animação que vamos abrir e passar o jogo, convide a chegar cedo pra garantir lugar e a reservar pelo GetinApp (grupos até 30): https://widget.getinapp.com.br/d6NZKJ6V
 
 INFORMAÇÕES DO BAR:
 - Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP
@@ -1453,6 +1473,16 @@ const TESTES_HORARIO = [
   { iso: "2026-05-18T20:00:00-03:00", nome: "Segunda 20h (sempre fechada)",
     esperado: { aberto: false, proxima: /terça-feira às 16h/ } },
 
+  // SEGUNDA ESPECIAL 29/06/2026 — Jogo do Brasil (abre 12h–20h só nesta data)
+  { iso: "2026-06-29T10:00:00-03:00", nome: "Seg 29/06 10h (antes da abertura especial)",
+    esperado: { aberto: false, proxima: /hoje às 12h/ } },
+  { iso: "2026-06-29T13:00:00-03:00", nome: "Seg 29/06 13h (aberta — jogo do Brasil)",
+    esperado: { aberto: true, fechaAs: /20h/ } },
+  { iso: "2026-06-29T19:59:00-03:00", nome: "Seg 29/06 19:59 (último minuto da abertura especial)",
+    esperado: { aberto: true } },
+  { iso: "2026-06-29T20:00:00-03:00", nome: "Seg 29/06 20h (fechou — volta ao normal)",
+    esperado: { aberto: false, proxima: /terça-feira às 16h/ } },
+
   // TERÇA, QUARTA, QUINTA — 16h até meia-noite
   { iso: "2026-05-19T15:59:00-03:00", nome: "Terça 15:59 (1 min antes de abrir)",
     esperado: { aberto: false, proxima: /hoje às 16h/ } },
@@ -1761,6 +1791,73 @@ app.get("/test-dourado", async (req, res) => {
       <p>Erro: <code>${e.message}</code></p>
       <p>Provável causa: número errado, Dourado bloqueou o bot, ou Z-API com problema.</p>
     </body></html>`);
+  }
+});
+
+// ── DISPARO: AVISO DO JOGO DO BRASIL (SEGUNDA 29/06) ─────────
+// Envia UMA mensagem para clientes que JÁ conversaram com o bot e
+// demonstraram interesse no jogo/Copa (mencionaram, em mensagens DELES,
+// "jogo", "brasil", "copa", "assistir", "partida", "seleção", "futebol").
+// Protegido por token. DRY-RUN por padrão: só LISTA quem receberia, sem enviar.
+// Para ENVIAR DE VERDADE, acrescente &confirmar=ENVIAR na URL.
+// Acesse: GET /disparar-jogo?phone=5511954657178
+const MSG_AVISO_JOGO = `Oi! Aqui é a Luz, do Soul Botequim 🍺
+
+Passando pra avisar: nesta *segunda-feira (29/06)* vamos abrir *exclusivamente* pra transmitir o *jogo do Brasil*! ⚽🇧🇷
+
+🕐 Abertura especial: das *12h às 20h*
+⏰ O jogo começa às *14h*
+
+Chega cedo pra garantir seu lugar! Se quiser, já reserve a mesa: https://widget.getinapp.com.br/d6NZKJ6V
+
+Te esperamos pra torcer com a gente!`;
+
+app.get("/disparar-jogo", async (req, res) => {
+  if (!painelAutorizado(req)) {
+    return res.status(403).json({ erro: "Acesso negado. Use ?phone=NUMERO_DO_GERENTE (ou ?token=SEGREDO)." });
+  }
+  try {
+    const enviarDeVerdade = req.query.confirmar === "ENVIAR";
+    const termos = ["jogo","brasil","copa","assistir","partida","seleção","selecao","futebol"];
+    const keys = await redis.keys("memoria:*");
+    const lista = [];
+    for (const k of keys) {
+      const tel = k.replace("memoria:", "");
+      if (/@|status|newsletter|broadcast/i.test(tel)) continue; // ignora grupos/canais
+      const v = await redis.get(k);
+      if (!v) continue;
+      let hist; try { hist = JSON.parse(v); } catch (e) { continue; }
+      // Só olha as mensagens DO CLIENTE (role user), pra não dar falso-positivo
+      // com respostas da Luz que mencionam Copa/jogo.
+      const textoCliente = hist
+        .filter(m => m.role === "user" && typeof m.content === "string")
+        .map(m => m.content).join(" ").toLowerCase();
+      if (termos.some(t => textoCliente.includes(t))) lista.push(tel);
+    }
+    const destinatarios = [...new Set(lista)];
+
+    if (!enviarDeVerdade) {
+      return res.json({
+        modo: "PREVIEW (nada foi enviado)",
+        totalDestinatarios: destinatarios.length,
+        telefones: destinatarios,
+        mensagemQueSeraEnviada: MSG_AVISO_JOGO,
+        comoEnviarDeVerdade: "Acrescente &confirmar=ENVIAR no final da URL."
+      });
+    }
+
+    let enviados = 0; const falhas = [];
+    for (const tel of destinatarios) {
+      try {
+        await enviarMensagem(tel, MSG_AVISO_JOGO, { fracionar: false });
+        enviados++;
+        await new Promise(r => setTimeout(r, 4000)); // 4s entre cada (reduz risco de bloqueio)
+      } catch (e) { falhas.push({ tel, erro: e.message }); }
+    }
+    console.log("[DISPARO-JOGO] Enviados: " + enviados + "/" + destinatarios.length);
+    res.json({ modo: "ENVIADO", enviados, totalDestinatarios: destinatarios.length, falhas });
+  } catch (e) {
+    res.status(500).json({ erro: e.message });
   }
 });
 
