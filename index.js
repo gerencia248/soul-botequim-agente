@@ -1020,6 +1020,7 @@ INFORMAÇÕES DO BAR:
 - Música: Jazz, Blues e Brasilidades — programação no Instagram @soulbotequim
 - Drink mais famoso: Fitzgerald ⭐
 - Reservas: https://widget.getinapp.com.br/d6NZKJ6V
+- IMPORTANTE CHEGAR CEDO: principalmente em dias cheios e de jogos, oriente sempre o cliente a chegar cedo. Se chegar muito tarde, NÃO garantimos que vamos conseguir atender/acomodar. Diga isso com simpatia, como um conselho pra ele não correr o risco de ficar sem lugar.
 - Sem valet — estacionamentos no entorno
 - Aniversariante do dia: 1 drink ou chopp de cortesia ANTES do pagamento da conta (somente para o aniversariante do dia, não para acompanhantes) | Pode trazer somente bolo
 - Não disponibilizamos barril de chopp para aniversário ou comemorações — somente o chopp que está nos bicos
