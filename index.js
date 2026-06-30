@@ -860,20 +860,6 @@ function getStatusHorario() {
     motivo
   });
 
-  // ── EVENTO ESPECIAL: Segunda 29/06/2026 — JOGO DO BRASIL ──
-  // Nesta segunda (que normalmente é FECHADA) o bar abre EXCEPCIONALMENTE
-  // das 12h às 20h para transmitir o jogo do Brasil (começa às 14h).
-  // É só NESTA data — as demais segundas seguem fechadas pela regra normal.
-  const y  = data.getFullYear();
-  const mo = String(data.getMonth() + 1).padStart(2, "0");
-  const dd = String(data.getDate()).padStart(2, "0");
-  const hojeStr = `${y}-${mo}-${dd}`;
-  if (hojeStr === "2026-06-29") {
-    if (h >= 12 && h < 20) return { aberto: true, fechaAs: "20h (abertura especial só hoje, pro jogo do Brasil)" };
-    if (h < 12) return fechado("hoje às 12h (abertura especial pro jogo do Brasil)");
-    return fechado("terça-feira às 16h"); // depois das 20h, volta ao normal
-  }
-
   // Madrugada (0h–4h): trata o "fechamos há pouco" apenas quando o dia
   // anterior fechou À MEIA-NOITE (Ter, Qua, Qui, Sex, Sáb).
   // Segunda (fechada o dia todo) e Domingo (fecha às 21h) não geram "há pouco".
@@ -991,13 +977,6 @@ HORÁRIOS DE FUNCIONAMENTO:
 - Sexta e Sábado: 12h até meia-noite
 - Domingo: 12h até 21h
 - Segunda-feira: FECHADO
-- ⚠️ EXCEÇÃO ESPECIAL — Segunda-feira 29/06/2026: ABERTO das 12h às 20h (SÓ nesta segunda!) pra transmitir o JOGO DO BRASIL, que começa às 14h. Nas outras segundas segue fechado.
-
-EVENTO ESPECIAL — JOGO DO BRASIL (SEGUNDA 29/06/2026):
-- Nesta segunda-feira, 29/06/2026, o Soul vai abrir EXCEPCIONALMENTE das 12h às 20h pra transmitir o jogo do Brasil (começa às 14h) no projetor e na TV.
-- É só nesta segunda — nas demais segundas o bar continua fechado.
-- ⏰ RESERVAS só até as 12h30 desta segunda (29/06): depois desse horário NÃO aceitamos mais reserva pra esse dia. Quem chegar depois é por ordem de chegada. Avise isso com clareza e incentive o cliente a reservar logo: https://widget.getinapp.com.br/d6NZKJ6V
-- Quando o cliente perguntar sobre o jogo do Brasil de segunda, confirme com animação que vamos abrir e passar o jogo, lembre que a reserva é só até as 12h30 e convide a chegar cedo pra garantir lugar (reserva pelo GetinApp, grupos até 30): https://widget.getinapp.com.br/d6NZKJ6V
 
 EVENTO ESPECIAL — JOGO DA COPA (DOMINGO 05/07/2026):
 - Domingo, 05/07/2026, vamos transmitir o jogo da Copa no projetor e na TV (domingo o bar abre normal, 12h às 21h).
@@ -1483,16 +1462,6 @@ const TESTES_HORARIO = [
   { iso: "2026-05-18T15:00:00-03:00", nome: "Segunda 15h (sempre fechada)",
     esperado: { aberto: false, proxima: /terça-feira às 16h/ } },
   { iso: "2026-05-18T20:00:00-03:00", nome: "Segunda 20h (sempre fechada)",
-    esperado: { aberto: false, proxima: /terça-feira às 16h/ } },
-
-  // SEGUNDA ESPECIAL 29/06/2026 — Jogo do Brasil (abre 12h–20h só nesta data)
-  { iso: "2026-06-29T10:00:00-03:00", nome: "Seg 29/06 10h (antes da abertura especial)",
-    esperado: { aberto: false, proxima: /hoje às 12h/ } },
-  { iso: "2026-06-29T13:00:00-03:00", nome: "Seg 29/06 13h (aberta — jogo do Brasil)",
-    esperado: { aberto: true, fechaAs: /20h/ } },
-  { iso: "2026-06-29T19:59:00-03:00", nome: "Seg 29/06 19:59 (último minuto da abertura especial)",
-    esperado: { aberto: true } },
-  { iso: "2026-06-29T20:00:00-03:00", nome: "Seg 29/06 20h (fechou — volta ao normal)",
     esperado: { aberto: false, proxima: /terça-feira às 16h/ } },
 
   // TERÇA, QUARTA, QUINTA — 16h até meia-noite
