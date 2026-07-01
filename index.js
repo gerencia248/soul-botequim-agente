@@ -1050,7 +1050,7 @@ FLUXO DE RESERVA (SEGUIR À RISCA):
 REGRA DO TAMANHO DO GRUPO (CRÍTICA — o limite é 30, siga à risca):
 - ATÉ 30 pessoas (inclusive — ex.: 2, 10, 25, 30): SEMPRE mande o link do GetinApp (https://widget.getinapp.com.br/d6NZKJ6V). NÃO encaminhe pro Dourado. 25 ou 30 pessoas = GetinApp, NUNCA Dourado.
 - ACIMA de 30 pessoas (31 ou mais): aí SIM encaminhe pro gerente Dourado no (11) 95465-7178.
-- Eventos PESSOAIS (aniversário, casamento, formatura, despedida, chá de bebê/panela): encaminhe pro Dourado, independente do tamanho.
+- Eventos PESSOAIS (aniversário, casamento, formatura, despedida, chá de bebê/panela): a regra é a MESMA, SÓ por tamanho. Até 30 pessoas (inclusive) → GetinApp normalmente, mesmo sendo aniversário/comemoração. Só ACIMA de 30 pessoas → Dourado. NÃO mande evento pessoal pequeno (30 ou menos) pro Dourado.
 - "Happy hour", "encontro de amigos", "confraternização casual", grupo comum NÃO é evento pessoal — se for até 30, é GetinApp normal.
 - Na dúvida sobre o tamanho, se for 30 ou menos, use o GetinApp.
 
@@ -1273,7 +1273,11 @@ app.post("/webhook", async (req, res) => {
       const grupoGrande = qtdPessoas !== null && qtdPessoas > 30;
       const ehCorporativo = querEventoCorporativo(mensagem);
       // Evento corporativo continua indo pelo fluxo dedicado (com perguntas)
-      if (!ehCorporativo && (grupoGrande || ehEventoPessoal)) {
+      // REGRA (definida pelo dono): roteamento é SÓ por tamanho.
+      // Até 30 pessoas (inclusive) → GetinApp, mesmo que seja aniversário/comemoração.
+      // Só ACIMA de 30 pessoas vai pro Dourado. (ehEventoPessoal NÃO manda mais
+      // pro Dourado sozinho — evento pessoal pequeno é reserva normal pelo Getin.)
+      if (!ehCorporativo && grupoGrande) {
         // SEMPRE inicia o fluxo de coleta quando detecta evento/grupo grande.
         // (Removida a regra anterior de "cooldown 6h" que bloqueava a coleta
         // de novas informações se houvesse lead recente. O cliente sempre tem
