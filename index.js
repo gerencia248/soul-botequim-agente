@@ -1161,6 +1161,12 @@ COMO AGIR:
 - Programação musical: direcione para @soulbotequim
 - Quando fechado, convide para reservar
 
+MEMÓRIA E CLIENTE RECORRENTE (IMPORTANTE):
+- Você TEM memória de cada cliente pelo número de WhatsApp: o histórico das conversas dele fica salvo e aparece pra você. NUNCA diga que "começa do zero", que "cada conversa é nova" ou que "não tem memória de atendimentos anteriores" — isso é FALSO e passa imagem ruim.
+- Se o cliente perguntar "você lembra de mim?", "sou cliente daqui", "já vim aí antes" ou parecido: responda de forma CALOROSA e humana. Se o sistema te passou dados dele (nome, reserva anterior, tipo de evento), reconheça e cite algo pra mostrar que lembra (ex.: "Claro que lembro, [nome]! Da sua reserva de [X] pessoas, né? 🍻").
+- Se você NÃO tiver detalhes específicos guardados, NÃO invente: seja simpático e acolhedor, tipo "Opa, que bom te ver de novo por aqui! 😄 Me conta, como posso te ajudar hoje?" — reconhecendo o cliente sem inventar fatos.
+- Trate cliente recorrente com um carinho a mais (ele já confia no Soul).
+
 FLUXO DE RESERVA (SEGUIR À RISCA):
 - Se o cliente pede reserva mas NÃO informou ainda dia E quantidade de pessoas:
     NÃO mande o link de reserva ainda. Pergunte em UMA frase curta: "Pra quantas pessoas e qual dia?"
@@ -1230,10 +1236,28 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   const ancoraSemana = resolverDiasSemana(mensagemUsuario);
   const ancoraDelivery = instrucaoDelivery(mensagemUsuario);
 
+  // Cliente RECORRENTE: se já temos um lead/reserva salvo dele, injeta os dados
+  // pra Luz personalizar e mostrar que "lembra" dele (o histórico também vai junto).
+  let ancoraCliente = "";
+  try {
+    const leadCli = await obterLead(telefone);
+    const temHistorico = Array.isArray(historico) && historico.length > 2;
+    if (leadCli && (leadCli.nomeLead || leadCli.dia || leadCli.pessoas)) {
+      const partes = [];
+      if (leadCli.nomeLead) partes.push("Nome: " + leadCli.nomeLead);
+      if (leadCli.tipoLead) partes.push("Tipo do último contato: " + leadCli.tipoLead);
+      if (leadCli.dia) partes.push("Reserva/interesse anterior: " + leadCli.dia);
+      if (leadCli.pessoas) partes.push(leadCli.pessoas + " pessoas");
+      ancoraCliente = "\n\nCLIENTE JA CONHECIDO (recorrente) — voce JA falou com ele antes. Use estes dados pra personalizar com naturalidade (sem soar robotico, sem despejar tudo de uma vez): " + partes.join(" | ") + ". Se ele perguntar se voce lembra dele, confirme com carinho e cite algo que voce sabe.";
+    } else if (temHistorico) {
+      ancoraCliente = "\n\nCLIENTE RECORRENTE: voce JA conversou com esta pessoa antes (o historico esta disponivel acima). Se ele perguntar se voce lembra dele, seja caloroso e reconheca — NUNCA diga que comeca do zero.";
+    }
+  } catch (e) {}
+
   const mensagensComAncora = [
     {
       role: "user",
-      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas + ancoraSemana + ancoraDelivery
+      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas + ancoraSemana + ancoraDelivery + ancoraCliente
     },
     {
       role: "assistant",
