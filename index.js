@@ -413,11 +413,11 @@ async function finalizarLeadDourado(telefone) {
   if (!fluxo) return;
   const d = fluxo.dados;
 
-  // 1) Avisa cliente
+  // 1) Avisa cliente (+ aviso de lugar cativo, se ele pediu um lugar específico)
   await enviarMensagem(telefone,
     "Show, anotei tudo! 🍻\n\n" +
     "Vou passar agora pro *Dourado* (nosso gerente). Ele vai te chamar aqui no WhatsApp em alguns minutos pra alinhar o resto. Combinado?\n\n" +
-    "Se for urgente, pode chamar ele direto: (11) 95465-7178"
+    "Se for urgente, pode chamar ele direto: (11) 95465-7178" + avisoLugarCativo(d.observacoes)
   );
 
   // 2) Envia lead COMPLETO pro Dourado
@@ -843,6 +843,15 @@ function extrairDadosEvento(mensagem) {
   if (/mesa grande|mes[ãa]o|mesa comprida/.test(txt)) obs.push("mesa grande");
   if (obs.length) dados.observacoes = obs.join("; ");
   return dados;
+}
+
+// Se o cliente pediu um LUGAR específico, devolve o aviso (inserido antes) de que,
+// por causa da alta demanda dos jogos da Copa, NÃO dá pra garantir lugar cativo.
+// Retorna "" se a observação não for sobre lugar.
+function avisoLugarCativo(observacoes) {
+  if (!observacoes) return "";
+  if (!/\b(tv|televis|telona|externa|parte de fora|l[áa] fora|canto|mesa|[áa]rea|varanda|jardim)\b/i.test(observacoes)) return "";
+  return "\n\n📍 Sobre o lugar que você pediu (" + observacoes + "): já deixei anotado! Só um detalhe importante: por causa da alta procura nos jogos da Copa, não dá pra garantir lugar cativo, mas a equipe vai fazer o possível pra te atender. 😊";
 }
 
 function perguntaSobreHorario(t) {
@@ -1393,10 +1402,12 @@ app.post("/webhook", async (req, res) => {
         return res.status(200).json({ ok: true });
       }
       if (respostaSoReserva(mensagem)) {
+        const fReserva = await carregarFluxo("perguntapacote", telefone);
         await apagarFluxo("perguntapacote", telefone);
+        const obsReserva = fReserva && fReserva.dados ? fReserva.dados.observacoes : "";
         await enviarMensagem(telefone,
           "Show! Então é só a reserva de mesa. 😊 Garante a sua por aqui: https://widget.getinapp.com.br/d6NZKJ6V\n\n" +
-          "Me avisa quando confirmar, beleza?", { fracionar: false });
+          "Me avisa quando confirmar, beleza?" + avisoLugarCativo(obsReserva), { fracionar: false });
         return res.status(200).json({ ok: true });
       }
       // não entendeu a resposta → limpa a espera e segue o fluxo normal
