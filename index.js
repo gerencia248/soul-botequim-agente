@@ -742,6 +742,30 @@ function mencionaPacoteFechado(t) {
     "espaço todo","espaco todo","fechar o bar","reservar o bar inteiro"].some(g => txt.includes(g));
 }
 
+// Detecta menção a EVENTO/FESTA/comemoração — quando o bot ainda NÃO sabe se é
+// pacote fechado ou só reserva, ele pergunta antes de rotear.
+function mencionaEventoParaPerguntar(t) {
+  const txt = t.toLowerCase();
+  const generico = ["evento","festa","confraterniz","comemora","formatura","aniversário","aniversario",
+    "casamento","despedida","bodas"].some(g => txt.includes(g));
+  return generico || querEventoCorporativo(t) || querEventoOuFestaPessoal(t);
+}
+
+// Interpreta a RESPOSTA do cliente à pergunta "pacote fechado ou só reserva?".
+function respostaPacoteFechado(t) {
+  const txt = t.toLowerCase();
+  if (mencionaPacoteFechado(t)) return true;
+  return ["pacote","fechado","fechada","completo","open bar","openbar","buffet","exclusivo",
+    "primeiro","primeira","a primeira","1ª","opção 1","opcao 1"].some(g => txt.includes(g));
+}
+function respostaSoReserva(t) {
+  const txt = t.toLowerCase();
+  return ["só reserva","so reserva","apenas reserva","só a mesa","so a mesa","só mesa","so mesa",
+    "reserva de mesa","reservar mesa","só reservar","so reservar","mesa comum","normal","comum",
+    "segundo","segunda","a segunda","2ª","opção 2","opcao 2","só a reserva","so a reserva",
+    "de mesa","uma mesa"].some(g => txt.includes(g));
+}
+
 function perguntaSobreHorario(t) {
   const txt = t.toLowerCase();
   // Se a pergunta menciona um DIA DIFERENTE DE HOJE (amanhã, sábado, etc.),
@@ -1273,6 +1297,33 @@ app.post("/webhook", async (req, res) => {
     if (await estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return res.status(200).json({ ok: true }); }
     if (await estaNoFluxoLeadDourado(telefone)) { await processarFluxoLeadDourado(telefone, mensagem); return res.status(200).json({ ok: true }); }
 
+    // ── RESPOSTA À PERGUNTA "PACOTE FECHADO ou SÓ RESERVA?" ──
+    // Se o bot perguntou e está esperando a resposta:
+    //   - PACOTE FECHADO  → colhe os dados e manda o lead COMPLETO pro Dourado.
+    //   - SÓ RESERVA      → manda o link do GetinApp.
+    //   - resposta confusa → limpa a espera e deixa seguir o fluxo normal.
+    if (await temFluxo("perguntapacote", telefone)) {
+      if (respostaPacoteFechado(mensagem)) {
+        const f = await carregarFluxo("perguntapacote", telefone);
+        await apagarFluxo("perguntapacote", telefone);
+        await enviarMensagem(telefone,
+          "Perfeito! Evento com pacote fechado é com o nosso gerente *Dourado*. 🍻\n\n" +
+          "Deixa eu anotar uns detalhes rapidinho pra ele já te chamar com tudo na mão!");
+        await iniciarFluxoLeadDourado(telefone, (f && f.dados) || {});
+        console.log("[PACOTE-FECHADO] Lead iniciado para Dourado | cliente: " + telefone);
+        return res.status(200).json({ ok: true });
+      }
+      if (respostaSoReserva(mensagem)) {
+        await apagarFluxo("perguntapacote", telefone);
+        await enviarMensagem(telefone,
+          "Show! Então é só a reserva de mesa. 😊 Garante a sua por aqui: https://widget.getinapp.com.br/d6NZKJ6V\n\n" +
+          "Me avisa quando confirmar, beleza?", { fracionar: false });
+        return res.status(200).json({ ok: true });
+      }
+      // não entendeu a resposta → limpa a espera e segue o fluxo normal
+      await apagarFluxo("perguntapacote", telefone);
+    }
+
     // ── CLIENTE NÃO CONSEGUIU RESERVAR PELO GETIN → convite pra vir ao bar ──
     if (naoConseguiuReservar(mensagem)) {
       console.log("[RESERVA-FALHOU] " + telefone + " — enviando convite pra vir ao bar");
@@ -1336,6 +1387,30 @@ app.post("/webhook", async (req, res) => {
           console.log("[FLUXO-LEAD] Iniciado para " + telefone + " com pre-dados: " + JSON.stringify(dadosIniciais));
           return res.status(200).json({ ok: true });
         }
+      }
+    }
+
+    // ── EVENTO sem tipo definido → PERGUNTA "pacote fechado ou só reserva?" ──
+    // Só cai aqui se NÃO for pacote explícito nem grupo acima de 30 (esses já
+    // foram tratados acima). Guarda os dados já ditos pra pré-popular o lead.
+    {
+      const qtdEv = extrairQuantidadePessoas(mensagem);
+      const jaEhGrande = qtdEv !== null && qtdEv > 30;
+      if (!mencionaPacoteFechado(mensagem) && !jaEhGrande && mencionaEventoParaPerguntar(mensagem)) {
+        const datasEv = detectarDatasNaMensagem(mensagem);
+        const dadosEv = {};
+        if (qtdEv) dadosEv.pessoas = String(qtdEv);
+        if (datasEv.length > 0) {
+          const d = datasEv[0];
+          const r = diaSemanaDeData(d.dia, d.mes, d.ano);
+          dadosEv.dataEvento = r ? r.dataFormatada + " (" + r.nomeDia + ")" : d.dia + "/" + d.mes;
+        }
+        await salvarFluxo("perguntapacote", telefone, { dados: dadosEv });
+        await enviarMensagem(telefone,
+          "Que legal que pensou no Soul pro seu evento! 🎉 Só pra te direcionar certinho: vai ser um evento com *pacote fechado* (open bar, buffet, espaço reservado só pra vocês) ou só uma *reserva de mesa*?",
+          { fracionar: false });
+        console.log("[PERGUNTA-PACOTE] Perguntado para " + telefone);
+        return res.status(200).json({ ok: true });
       }
     }
 
