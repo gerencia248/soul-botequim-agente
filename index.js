@@ -730,6 +730,18 @@ function querEventoCorporativo(t) {
     "comemoração empresa","evento para grupo","reserva para empresa"].some(g => t.toLowerCase().includes(g));
 }
 
+// Cliente quer um EVENTO COM PACOTE FECHADO (open bar, buffet, espaço exclusivo,
+// aluguel do espaço). Esses casos vão pro Dourado, independente do tamanho.
+// (Reserva de mesa comum NÃO cai aqui — vai pelo GetinApp normal.)
+function mencionaPacoteFechado(t) {
+  const txt = t.toLowerCase();
+  return ["pacote fechado","pacote completo","pacote de evento","open bar","openbar","open-bar",
+    "buffet fechado","espaço exclusivo","espaco exclusivo","evento fechado","festa fechada",
+    "fechar o espaço","fechar o espaco","fechar um espaço","fechar um espaco","alugar o espaço",
+    "alugar o espaco","aluguel do espaço","aluguel do espaco","espaço só pra","espaco so pra",
+    "espaço todo","espaco todo","fechar o bar","reservar o bar inteiro"].some(g => txt.includes(g));
+}
+
 function perguntaSobreHorario(t) {
   const txt = t.toLowerCase();
   // Se a pergunta menciona um DIA DIFERENTE DE HOJE (amanhã, sábado, etc.),
@@ -1054,6 +1066,12 @@ REGRA DO TAMANHO DO GRUPO (CRÍTICA — o limite é 30, siga à risca):
 - "Happy hour", "encontro de amigos", "confraternização casual", grupo comum NÃO é evento pessoal — se for até 30, é GetinApp normal.
 - Na dúvida sobre o tamanho, se for 30 ou menos, use o GetinApp.
 
+EVENTO: PACOTE FECHADO vs SÓ RESERVA (REGRA IMPORTANTE — SEGUIR À RISCA):
+- Quando o cliente falar de EVENTO, FESTA, CONFRATERNIZAÇÃO, evento da EMPRESA, comemoração maior, ou pedir algo tipo open bar/buffet/espaço reservado, você PRIMEIRO pergunta de forma simpática, em UMA frase: "Vai ser um evento com *pacote fechado* (open bar, buffet, espaço reservado só pra vocês) ou só uma *reserva de mesa*? 😊".
+- Se o cliente disser que é PACOTE FECHADO (open bar, buffet, espaço exclusivo, fechar o espaço, aluguel do espaço): esse caso é com o *Dourado* (gerente), INDEPENDENTE do tamanho. Passe o contato dele: (11) 95465-7178. Diga que ele monta o pacote ideal.
+- Se o cliente disser que é SÓ RESERVA (mesa comum, sem pacote): trate como reserva normal e siga a REGRA DO TAMANHO — até 30 pessoas mande o link do GetinApp (https://widget.getinapp.com.br/d6NZKJ6V); acima de 30, aí sim é com o Dourado.
+- NÃO comece a perguntar nome da empresa, orçamento, etc. por conta própria — só faça a pergunta "pacote fechado ou só reserva?" e roteie conforme a resposta.
+
 FLUXO DE DELIVERY/ENTREGA (SEGUIR À RISCA):
 - Se o cliente perguntar sobre delivery, entrega, "vocês entregam?", "fazem delivery?", "dá pra pedir pra viagem", "pedir em casa" ou similar:
     Responda de forma curta e simpática que SIM, fazemos entrega pelo iFood, e mande o link puro: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
@@ -1262,22 +1280,19 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // ── GRUPO GRANDE (acima de 30) OU EVENTO PESSOAL → encaminha pro Dourado ──
-    // Regra: ATÉ 30 pessoas (inclusive) → fluxo normal pelo GetinApp.
-    //        ACIMA de 30 pessoas (31+) → Dourado cuida pessoalmente.
-    // Eventos pessoais (aniversário, casamento, etc.) sempre vão pro Dourado.
+    // ── GRUPO GRANDE (acima de 30) OU PACOTE FECHADO → encaminha pro Dourado ──
+    // Regra (definida pelo dono):
+    //   1) Reserva de mesa comum ATÉ 30 pessoas → GetinApp (mesmo aniversário/comemoração).
+    //   2) ACIMA de 30 pessoas → Dourado.
+    //   3) EVENTO COM PACOTE FECHADO (open bar, buffet, espaço exclusivo) → Dourado,
+    //      independente do tamanho. Só reserva de mesa → GetinApp.
     // Manda lead PROATIVO pro Dourado com últimas 6 mensagens da conversa.
     {
       const qtdPessoas = extrairQuantidadePessoas(mensagem);
       const ehEventoPessoal = querEventoOuFestaPessoal(mensagem);
       const grupoGrande = qtdPessoas !== null && qtdPessoas > 30;
-      const ehCorporativo = querEventoCorporativo(mensagem);
-      // Evento corporativo continua indo pelo fluxo dedicado (com perguntas)
-      // REGRA (definida pelo dono): roteamento é SÓ por tamanho.
-      // Até 30 pessoas (inclusive) → GetinApp, mesmo que seja aniversário/comemoração.
-      // Só ACIMA de 30 pessoas vai pro Dourado. (ehEventoPessoal NÃO manda mais
-      // pro Dourado sozinho — evento pessoal pequeno é reserva normal pelo Getin.)
-      if (!ehCorporativo && grupoGrande) {
+      const pacoteFechado = mencionaPacoteFechado(mensagem);
+      if (grupoGrande || pacoteFechado) {
         // SEMPRE inicia o fluxo de coleta quando detecta evento/grupo grande.
         // (Removida a regra anterior de "cooldown 6h" que bloqueava a coleta
         // de novas informações se houvesse lead recente. O cliente sempre tem
@@ -1304,8 +1319,11 @@ app.post("/webhook", async (req, res) => {
           }
 
           // 1) Avisa o cliente que vai coletar info pro Dourado
+          const motivoDourado = pacoteFechado
+            ? "esse tipo de evento com pacote fechado"
+            : (ehEventoPessoal ? "esse tipo de evento" : "grupos acima de 30 pessoas");
           await enviarMensagem(telefone,
-            "Que legal! Pra " + (ehEventoPessoal ? "esse tipo de evento" : "grupos acima de 30 pessoas") +
+            "Que legal! Pra " + motivoDourado +
             ", quem cuida pessoalmente é o *Dourado* (nosso gerente). 🍻\n\n" +
             "Antes de te passar pra ele, deixa eu só anotar uns detalhes pra ele já chegar com tudo na mão. Vai ser rapidinho!"
           );
@@ -1332,11 +1350,12 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    if (querEventoCorporativo(mensagem)) {
-      await iniciarFluxoEvento(telefone);
-      await enviarMensagem(telefone, "Ótimo! Ficamos felizes em receber sua empresa no Soul Botequim!\n\nVou precisar de algumas informações para montar o melhor pacote para vocês.\n\n" + ETAPAS_EVENTO[0].pergunta);
-      return res.status(200).json({ ok: true });
-    }
+    // NOTA: o antigo fluxo corporativo rígido (perguntava empresa/orçamento) foi
+    // DESATIVADO por decisão do dono. Agora, quando o cliente fala de evento/empresa
+    // mas NÃO diz que é pacote fechado, a Luz (IA) pergunta: "vai ser um evento com
+    // PACOTE FECHADO (open bar, buffet, espaço exclusivo) ou só uma RESERVA de mesa?".
+    //  - Pacote fechado → cai em mencionaPacoteFechado() → lead pro Dourado.
+    //  - Só reserva → link do GetinApp (seguindo a regra de tamanho).
 
     if (perguntaSobreHorario(mensagem)) {
       const s = getStatusHorario();
