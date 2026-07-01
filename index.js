@@ -766,6 +766,85 @@ function respostaSoReserva(t) {
     "de mesa","uma mesa"].some(g => txt.includes(g));
 }
 
+// Resolve o PRIMEIRO dia da semana/relativo citado ("domingo", "sábado", "amanhã")
+// para uma data real no formato "DD/MM/AAAA (nome do dia)". Retorna "" se não achar.
+function dataDeDiaSemana(texto) {
+  if (!texto) return "";
+  const t = texto.toLowerCase();
+  const agora = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const fmt = (d) => d.toLocaleDateString("pt-BR") + " (" + NOMES_DIAS_SEMANA[d.getDay()] + ")";
+  if (/\bdepois de amanh[ãa]/.test(t)) { const d = new Date(hoje); d.setDate(d.getDate() + 2); return fmt(d); }
+  if (/\bamanh[ãa]/.test(t)) { const d = new Date(hoje); d.setDate(d.getDate() + 1); return fmt(d); }
+  if (/\bhoje\b/.test(t)) return fmt(hoje);
+  const semana = [
+    { idx: 0, re: /\bdomingo\b/,           base: "domingo" },
+    { idx: 1, re: /\bsegunda(-feira)?\b/,  base: "segunda" },
+    { idx: 2, re: /\bter[çc]a(-feira)?\b/, base: "ter[çc]a" },
+    { idx: 3, re: /\bquarta(-feira)?\b/,   base: "quarta" },
+    { idx: 4, re: /\bquinta(-feira)?\b/,   base: "quinta" },
+    { idx: 5, re: /\bsexta(-feira)?\b/,    base: "sexta" },
+    { idx: 6, re: /\bs[áa]bado\b/,         base: "s[áa]bado" },
+  ];
+  for (const s of semana) {
+    if (!s.re.test(t)) continue;
+    let delta = (s.idx - hoje.getDay() + 7) % 7;
+    const proxima = new RegExp(s.base + "[^.]{0,15}(que vem|próxim|proxim)").test(t)
+      || new RegExp("(próxim|proxim)\\w*\\s+" + s.base).test(t);
+    if (proxima) delta += 7;
+    const d = new Date(hoje); d.setDate(d.getDate() + delta);
+    return fmt(d);
+  }
+  return "";
+}
+
+// Extrai da mensagem tudo que der pra PRÉ-PREENCHER o lead do Dourado, evitando
+// que o bot repita perguntas que o cliente já respondeu (nº de pessoas, data,
+// tipo de evento, local/preferência).
+function extrairDadosEvento(mensagem) {
+  const txt = (mensagem || "").toLowerCase();
+  const dados = {};
+  // nº de pessoas
+  const q = extrairQuantidadePessoas(mensagem);
+  if (q) dados.pessoas = String(q);
+  // data: primeiro tenta DD/MM; senão, dia da semana ("domingo", "amanhã"...)
+  const datas = detectarDatasNaMensagem(mensagem);
+  if (datas.length > 0) {
+    const d = datas[0];
+    const r = diaSemanaDeData(d.dia, d.mes, d.ano);
+    dados.dataEvento = r ? r.dataFormatada + " (" + r.nomeDia + ")" : d.dia + "/" + d.mes;
+  } else {
+    const ds = dataDeDiaSemana(txt);
+    if (ds) dados.dataEvento = ds;
+  }
+  // tipo de evento
+  const tipos = [
+    { re: /anivers[áa]rio/,                         label: "Aniversário" },
+    { re: /casamento/,                              label: "Casamento" },
+    { re: /formatura/,                              label: "Formatura" },
+    { re: /despedida/,                              label: "Despedida" },
+    { re: /ch[áa] de (panela|beb[êe]|casa nova)/,   label: "Chá" },
+    { re: /confraterniz/,                           label: "Confraternização" },
+    { re: /festa entre amigos|encontro de amigos/,  label: "Festa entre amigos" },
+    { re: /happy hour/,                             label: "Happy hour" },
+    { re: /jogo (do|da) |da copa|futebol|assistir o jogo|ver o jogo/, label: "Ver o jogo" },
+  ];
+  for (const tp of tipos) { if (tp.re.test(txt)) { dados.tipoEvento = tp.label; break; } }
+  // horário (ex.: "às 14h", "a partir das 20h", "14 hrs", "meio-dia")
+  const mHora = txt.match(/(\d{1,2})\s*(h|hrs|horas|:00)\b/) || txt.match(/\bàs?\s*(\d{1,2})\b/);
+  if (mHora) dados.horario = "A partir das " + mHora[1] + "h";
+  else if (/meio-?dia/.test(txt)) dados.horario = "Meio-dia";
+  // observações: local / preferência que o cliente já disse
+  const obs = [];
+  if (/perto da (tv|televis)|de frente (pra|para) (a )?(tv|televis)|perto da telona/.test(txt)) obs.push("perto da TV");
+  if (/[áa]rea externa|parte de fora|l[áa] fora|do lado de fora|\bexterna\b|no jardim|na varanda/.test(txt)) obs.push("área externa / parte de fora");
+  if (/[áa]rea interna|no sal[ãa]o/.test(txt)) obs.push("área interna");
+  if (/mesa do canto|no canto/.test(txt)) obs.push("mesa do canto");
+  if (/mesa grande|mes[ãa]o|mesa comprida/.test(txt)) obs.push("mesa grande");
+  if (obs.length) dados.observacoes = obs.join("; ");
+  return dados;
+}
+
 function perguntaSobreHorario(t) {
   const txt = t.toLowerCase();
   // Se a pergunta menciona um DIA DIFERENTE DE HOJE (amanhã, sábado, etc.),
@@ -1350,24 +1429,10 @@ app.post("/webhook", async (req, res) => {
         // direito a fornecer info atualizada; o Dourado prefere receber lead
         // novo do que ficar sem dado.)
         {
-          // Pré-popula dados que já conseguimos extrair da mensagem do cliente
-          // (assim a Luz não pergunta o que já foi dito — fluxo mais natural)
-          const datas = detectarDatasNaMensagem(mensagem);
-          const dadosIniciais = {};
-          if (qtdPessoas) dadosIniciais.pessoas = String(qtdPessoas);
-          if (datas.length > 0) {
-            const d = datas[0];
-            const r = diaSemanaDeData(d.dia, d.mes, d.ano);
-            dadosIniciais.dataEvento = r ? r.dataFormatada + " (" + r.nomeDia + ")" : d.dia + "/" + d.mes;
-          }
-          // Tenta inferir tipo de evento da mensagem
-          const tiposDetectaveis = ["aniversário","aniversario","casamento","formatura","despedida","chá de panela","cha de panela","chá de bebê","cha de bebe"];
-          for (const tipoT of tiposDetectaveis) {
-            if (mensagem.toLowerCase().includes(tipoT)) {
-              dadosIniciais.tipoEvento = tipoT.charAt(0).toUpperCase() + tipoT.slice(1);
-              break;
-            }
-          }
+          // Pré-popula tudo que der pra extrair da mensagem do cliente (nº de
+          // pessoas, data — inclusive "domingo/amanhã" —, tipo de evento, horário
+          // e local/preferência). Assim a Luz NÃO repergunta o que já foi dito.
+          const dadosIniciais = extrairDadosEvento(mensagem);
 
           // 1) Avisa o cliente que vai coletar info pro Dourado
           const motivoDourado = pacoteFechado
@@ -1397,14 +1462,7 @@ app.post("/webhook", async (req, res) => {
       const qtdEv = extrairQuantidadePessoas(mensagem);
       const jaEhGrande = qtdEv !== null && qtdEv > 30;
       if (!mencionaPacoteFechado(mensagem) && !jaEhGrande && mencionaEventoParaPerguntar(mensagem)) {
-        const datasEv = detectarDatasNaMensagem(mensagem);
-        const dadosEv = {};
-        if (qtdEv) dadosEv.pessoas = String(qtdEv);
-        if (datasEv.length > 0) {
-          const d = datasEv[0];
-          const r = diaSemanaDeData(d.dia, d.mes, d.ano);
-          dadosEv.dataEvento = r ? r.dataFormatada + " (" + r.nomeDia + ")" : d.dia + "/" + d.mes;
-        }
+        const dadosEv = extrairDadosEvento(mensagem);
         await salvarFluxo("perguntapacote", telefone, { dados: dadosEv });
         await enviarMensagem(telefone,
           "Que legal que pensou no Soul pro seu evento! 🎉 Só pra te direcionar certinho: vai ser um evento com *pacote fechado* (open bar, buffet, espaço reservado só pra vocês) ou só uma *reserva de mesa*?",
