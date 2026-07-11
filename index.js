@@ -897,6 +897,22 @@ function avisoLugarCativo(observacoes) {
   return "\n\n📍 Sobre o lugar que você pediu (" + observacoes + "): já deixei anotado! Só um detalhe importante: por causa da alta procura nos jogos da Copa, não dá pra garantir lugar cativo, mas a equipe vai fazer o possível pra te atender. 😊";
 }
 
+// Se o grupo já é conhecido e tem 30 pessoas ou MENOS, manda direto pro GetinApp
+// (sem mencionar o Dourado). Retorna true se redirecionou. Evita a mensagem
+// contraditória "é com o Dourado" seguida de "na verdade pra 30 não precisa".
+async function redirecionarSePequeno(telefone, dados) {
+  const qtd = parseInt(String((dados && dados.pessoas) || "").replace(/\D/g, ""), 10);
+  if (!isNaN(qtd) && qtd > 0 && qtd <= 30) {
+    await enviarMensagem(telefone,
+      "Que boa notícia: pra até 30 pessoas você já garante sua reserva na hora pelo nosso link, sem precisar esperar o Dourado! 😊\n\n" +
+      "É só reservar por aqui: https://widget.getinapp.com.br/d6NZKJ6V\n\nMe avisa quando confirmar, beleza?",
+      { fracionar: false });
+    console.log("[TRAVA-TAMANHO] " + telefone + " (" + qtd + " pessoas <=30) -> GetinApp direto (sem Dourado)");
+    return true;
+  }
+  return false;
+}
+
 function perguntaSobreHorario(t) {
   const txt = t.toLowerCase();
   // Se a pergunta menciona um DIA DIFERENTE DE HOJE (amanhã, sábado, etc.),
@@ -1463,6 +1479,8 @@ app.post("/webhook", async (req, res) => {
       if (respostaPacoteFechado(mensagem)) {
         const f = await carregarFluxo("perguntapacote", telefone);
         await apagarFluxo("perguntapacote", telefone);
+        // Se já sabemos que é ATÉ 30 pessoas, vai direto pro GetinApp (sem falar do Dourado).
+        if (await redirecionarSePequeno(telefone, f && f.dados)) return res.status(200).json({ ok: true });
         await enviarMensagem(telefone,
           "Perfeito! Evento com pacote fechado é com o nosso gerente *Dourado*. 🍻\n\n" +
           "Deixa eu anotar uns detalhes rapidinho pra ele já te chamar com tudo na mão!");
@@ -1531,6 +1549,10 @@ app.post("/webhook", async (req, res) => {
           // pessoas, data — inclusive "domingo/amanhã" —, tipo de evento, horário
           // e local/preferência). Assim a Luz NÃO repergunta o que já foi dito.
           const dadosIniciais = extrairDadosEvento(mensagem);
+
+          // Se já é ATÉ 30 pessoas (ex.: "open bar para 20"), manda direto pro
+          // GetinApp sem mencionar o Dourado (evita mensagem contraditória).
+          if (await redirecionarSePequeno(telefone, dadosIniciais)) return res.status(200).json({ ok: true });
 
           // 1) Avisa o cliente que vai coletar info pro Dourado
           const motivoDourado = pacoteFechado
