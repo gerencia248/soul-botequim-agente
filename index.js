@@ -378,6 +378,22 @@ async function avancarFluxoLeadDourado(telefone, respostaAtual) {
     fluxo.dados[etapaAtual.campo] = respostaAtual;
   }
 
+  // ── TRAVA DE TAMANHO (regra do dono): reserva vai pro DOURADO só ACIMA de 30.
+  // Assim que o cliente informa 30 pessoas ou MENOS, redireciona pro GetinApp
+  // (mesmo que a conversa tenha começado como "evento"). Acima de 30 segue pro Dourado.
+  {
+    const qtd = parseInt(String(fluxo.dados.pessoas || "").replace(/\D/g, ""), 10);
+    if (!isNaN(qtd) && qtd > 0 && qtd <= 30) {
+      await apagarFluxo("lead", telefone);
+      await enviarMensagem(telefone,
+        "Boa notícia: pra até 30 pessoas você já garante sua reserva na hora, sem precisar esperar o Dourado! 😊\n\n" +
+        "É só reservar por aqui: https://widget.getinapp.com.br/d6NZKJ6V\n\nMe avisa quando confirmar, e qualquer coisa estou à disposição! 🍻",
+        { fracionar: false });
+      console.log("[TRAVA-TAMANHO] " + telefone + " informou " + qtd + " pessoas (<=30) -> redirecionado pro GetinApp");
+      return;
+    }
+  }
+
   // Avança até encontrar próxima etapa não-preenchida (pula as que já têm dados)
   fluxo.etapa++;
   while (fluxo.etapa < ETAPAS_LEAD_DOURADO.length) {
@@ -722,6 +738,33 @@ function contemPalavroes(t) { return palavroes.some(p => t.toLowerCase().include
 function querFalarComHumano(t) {
   return ["falar com atendente","falar com humano","falar com pessoa","atendente humano","quero um humano",
     "não quero robô","nao quero robo","falar com dourado","fala com o dourado","gerente"].some(g => t.toLowerCase().includes(g));
+}
+
+// Mensagem que é SÓ uma saudação (sem pergunta/pedido). Serve pra responder
+// rápido com um cumprimento — assim a saudação NÃO chega depois da resposta.
+function ehSaudacaoPura(t) {
+  if (!t) return false;
+  const s = t.toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "") // remove acentos (olá -> ola)
+    .replace(/[^a-z\s]/gi, "").replace(/\s+/g, " ").trim();
+  if (s.length === 0 || s.length > 20) return false;
+  const puras = [
+    "oi","oii","oiii","oie","ola","opa","eai","e ai","alo","hey","hi","salve","fala",
+    "bom dia","boa tarde","boa noite","boa madrugada",
+    "tudo bem","tudo bom","tudo certo","tudo joia","tudo tranquilo","de boa",
+    "oi tudo bem","ola tudo bem","opa tudo bem","oi boa tarde","oi bom dia","oi boa noite",
+    "boa tarde tudo bem","bom dia tudo bem","boa noite tudo bem","oi tudo bom","fala ai"
+  ];
+  return puras.includes(s);
+}
+
+// Cliente pediu chopp/drink/bebida DE GRAÇA (grátis) pra todos/convidados.
+// Regra do bar: cortesia de chopp/drink é SÓ pro aniversariante do dia.
+function pedeBebidaGratis(t) {
+  const txt = (t || "").toLowerCase();
+  const bebida = /(chopp|chope|chop|cerveja|drink|drinque|bebida|caipirinha|dose|breja)/.test(txt);
+  const gratis = /(gr[áa]tis|de gra[çc]a|cortesia|free|por conta da casa|n[ãa]o vou pagar|sem pagar|liberad[ao])/.test(txt);
+  return bebida && gratis;
 }
 
 function querEventoCorporativo(t) {
@@ -1072,6 +1115,7 @@ TOM E VOCABULÁRIO:
 - Respostas MUITO CURTAS: ideal 1 a 3 frases. Limite ABSOLUTO: 2 parágrafos.
 - MÁXIMO 1 emoji na mensagem inteira (não 1 por parágrafo, não 1 por linha)
 - NÃO repita saudação se já cumprimentou nesta conversa
+- SAUDAÇÃO SEMPRE PRIMEIRO: se o cliente cumprimentar E perguntar algo na MESMA mensagem (ex.: "oi, tá aberto?"), comece CUMPRIMENTANDO de volta ("Oi, tudo bem? 😊") e SÓ DEPOIS responda. NUNCA responda a pergunta antes do cumprimento na primeira mensagem da conversa.
 - NUNCA diga que não tem informações — tudo está neste prompt
 
 FORMATAÇÃO WHATSAPP (CRÍTICO — NÃO IGNORAR):
@@ -1160,6 +1204,7 @@ COMO AGIR:
 - Nunca invente preços ou itens fora do cardápio
 - Programação musical: direcione para @soulbotequim
 - Quando fechado, convide para reservar
+- CORTESIA / CHOPP/DRINK GRÁTIS: a cortesia de chopp ou drink é EXCLUSIVA pro *aniversariante do dia* 🎂 — NÃO é pra todos os convidados. Se o cliente pedir bebida de graça pra galera/convidados, avise isso com simpatia (o aniversariante ganha; o resto consome normal do cardápio). NÃO prometa bebida grátis pra ninguém além do aniversariante.
 
 MEMÓRIA E CLIENTE RECORRENTE (IMPORTANTE):
 - Você TEM memória de cada cliente pelo número de WhatsApp: o histórico das conversas dele fica salvo e aparece pra você. NUNCA diga que "começa do zero", que "cada conversa é nova" ou que "não tem memória de atendimentos anteriores" — isso é FALSO e passa imagem ruim.
@@ -1436,6 +1481,24 @@ app.post("/webhook", async (req, res) => {
       }
       // não entendeu a resposta → limpa a espera e segue o fluxo normal
       await apagarFluxo("perguntapacote", telefone);
+    }
+
+    // ── SAUDAÇÃO PURA ("oi", "boa tarde", "tudo bem") → cumprimenta RÁPIDO ──
+    // Resposta determinística e instantânea garante que a SAUDAÇÃO chega ANTES
+    // de qualquer resposta a uma pergunta seguinte (evita saudar depois de responder).
+    if (ehSaudacaoPura(mensagem)) {
+      const horaSP = parseInt(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "2-digit", hour12: false }), 10);
+      const saud = horaSP < 12 ? "Bom dia" : (horaSP < 18 ? "Boa tarde" : "Boa noite");
+      await enviarMensagem(telefone,
+        saud + "! Tudo bem? 😊 Seja muito bem-vindo(a) ao *Soul Botequim*! Como posso te ajudar hoje? 🍻");
+      return res.status(200).json({ ok: true });
+    }
+
+    // ── PEDIDO DE CHOPP/DRINK GRÁTIS → esclarece que a cortesia é só do aniversariante ──
+    if (pedeBebidaGratis(mensagem)) {
+      await enviarMensagem(telefone,
+        "Que animação! 🍻 Só um detalhe importante: a cortesia de *chopp/drink grátis* aqui é exclusiva pro *aniversariante do dia* 🎂 — não vale pra todos os convidados. O resto da galera consome normalmente do cardápio, combinado? 😊\n\nPosso te ajudar com a reserva ou o cardápio?");
+      return res.status(200).json({ ok: true });
     }
 
     // ── CLIENTE NÃO CONSEGUIU RESERVAR PELO GETIN → convite pra vir ao bar ──
