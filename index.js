@@ -210,18 +210,41 @@ const LINK_IFOOD = "https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim
 function mencionaDelivery(texto) {
   if (!texto) return false;
   const t = texto.toLowerCase();
+  // "entrega em casa"/iFood. (Retirar/buscar/pra levar/pra viagem NÃO entram aqui —
+  // isso é RETIRADA, tratada em mencionaRetirada.)
   return [
     "delivery", "entrega", "entregam", "entregar", "entregue",
-    "ifood", "i food", "pra viagem", "para viagem", "viagem",
-    "pedir em casa", "pedido em casa", "leva em casa", "levam em casa",
+    "ifood", "i food",
+    "pedir em casa", "pedido em casa", "leva em casa", "levam em casa", "manda em casa",
     "tele entrega", "tele-entrega", "vocês entregam", "voces entregam", "voce entrega"
   ].some(k => t.includes(k));
 }
 function instrucaoDelivery(texto) {
   if (!mencionaDelivery(texto)) return "";
-  return "\n\nINSTRUCAO DETERMINISTICA (DELIVERY): O cliente perguntou sobre delivery/entrega. " +
+  return "\n\nINSTRUCAO DETERMINISTICA (DELIVERY): O cliente perguntou sobre delivery/entrega em casa. " +
     "Responda de forma curta e simpatica que SIM, fazemos entrega pelo iFood, e mande o link PURO (sem ** sem colchetes): " +
     LINK_IFOOD;
+}
+
+// ── DETECTOR DE RETIRADA / PEDIR PRA LEVAR ───────────────────
+// O cliente pode fazer o pedido pelo WhatsApp e RETIRAR no proprio bar.
+function mencionaRetirada(texto) {
+  if (!texto) return false;
+  const t = texto.toLowerCase();
+  return [
+    "retirar","retirada","retiro","pra retirar","para retirar",
+    "buscar","vou buscar","pegar no local","pegar ai","pegar aí","pego ai","pego aí",
+    "balcão","balcao","no balcao","no balcão",
+    "pra levar","para levar","levar pra casa","levar para casa","pra viagem","para viagem","viagem",
+    "take away","takeaway","pra retira","retira no local","passar ai","passar aí","passo ai","passo aí"
+  ].some(k => t.includes(k));
+}
+function instrucaoRetirada(texto) {
+  if (!mencionaRetirada(texto)) return "";
+  return "\n\nINSTRUCAO DETERMINISTICA (RETIRADA): O cliente quer RETIRAR o pedido no local. " +
+    "Responda que SIM! Dá pra fazer o pedido aqui mesmo pelo WhatsApp e retirar no proprio bar. " +
+    "Peca de forma simpatica que ele mande o que vai querer (com base no cardapio) que a gente prepara e ele so passa pra buscar. " +
+    "Confirme o horario de funcionamento se for relevante. NAO diga que nao temos retirada.";
 }
 
 // ── RESOLVER DE DIAS DA SEMANA (nome do dia → DATA exata) ────
@@ -1194,7 +1217,8 @@ INFORMAÇÕES DO BAR:
 - COPA DO MUNDO: vamos transmitir TODOS os jogos da Copa (não só os do Brasil), no projetor e na TV! ⚽🌍 Quando o cliente perguntar sobre qualquer jogo da Copa (Brasil ou outras seleções), confirme com animação que vamos passar e convide a garantir a mesa/reserva (grupos até 30 pelo link do GetinApp).
 - Temos opções veganas no cardápio
 - Não temos petisco para animais (pet friendly apenas para a presença dos pets)
-- DELIVERY/ENTREGA: fazemos entrega pelo iFood. Link do cardápio e pedidos: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
+- DELIVERY/ENTREGA (em casa): fazemos entrega pelo iFood. Link do cardápio e pedidos: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
+- RETIRADA (pedir e buscar no local): SIM, dá pra fazer o pedido aqui pelo WhatsApp e RETIRAR no próprio bar. O cliente escolhe pelo cardápio, a gente prepara e ele passa pra buscar. NUNCA diga que não temos retirada. (Diferença: iFood = entrega em casa; retirada = ele mesmo busca aqui.)
 
 DRINKS AUTORAIS: Corsário, Dama da Noite, Carcarah, Amarelo Manga, Jacira, Caju Amigo, Macunaíma, Soul Punch, Bitter Giuseppe
 DRINKS CLÁSSICOS: Fitzgerald, Negroni, Mojito, Caipirinha, El Diablo, Hibiscus Margarita, Aperol Spritz
@@ -1251,11 +1275,18 @@ EVENTO: PACOTE FECHADO vs SÓ RESERVA (REGRA IMPORTANTE — SEGUIR À RISCA):
 - Se o cliente disser que é SÓ RESERVA (mesa comum, sem pacote): trate como reserva normal e siga a REGRA DO TAMANHO — até 30 pessoas mande o link do GetinApp (https://widget.getinapp.com.br/d6NZKJ6V); acima de 30, aí sim é com o Dourado.
 - NÃO comece a perguntar nome da empresa, orçamento, etc. por conta própria — só faça a pergunta "pacote fechado ou só reserva?" e roteie conforme a resposta.
 
-FLUXO DE DELIVERY/ENTREGA (SEGUIR À RISCA):
-- Se o cliente perguntar sobre delivery, entrega, "vocês entregam?", "fazem delivery?", "dá pra pedir pra viagem", "pedir em casa" ou similar:
+FLUXO DE DELIVERY/ENTREGA EM CASA (SEGUIR À RISCA):
+- Se o cliente perguntar sobre delivery, entrega EM CASA, "vocês entregam?", "fazem delivery?", "pedir em casa" ou similar:
     Responda de forma curta e simpática que SIM, fazemos entrega pelo iFood, e mande o link puro: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
 - Mande o link puro, SEM ** ao redor, SEM colchetes, SEM parênteses
 - Ex.: "Fazemos sim! 😊 É só pedir pelo nosso iFood aqui: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741"
+
+FLUXO DE RETIRADA / PEDIR PRA LEVAR (SEGUIR À RISCA):
+- Se o cliente falar em "retirar", "buscar", "pegar no local/balcão", "pra levar", "pra viagem" ou similar:
+    Responda que SIM! 😊 Dá pra fazer o pedido aqui mesmo pelo WhatsApp e RETIRAR no próprio bar.
+    Peça pra ele mandar o que vai querer (com base no cardápio) que a gente prepara e ele só passa pra buscar.
+- NUNCA diga que não temos retirada — TEMOS.
+- Diferença pra não confundir: iFood = entrega na casa do cliente; retirada = o cliente faz o pedido aqui e vem buscar no bar.
 
 ═══════════════════════════════════════════
 CARDÁPIO COMPLETO COM PREÇOS — sua FONTE OFICIAL de preços e itens.
@@ -1296,6 +1327,7 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   const ancoraDatas = formatarContextoDatas(mensagemUsuario);
   const ancoraSemana = resolverDiasSemana(mensagemUsuario);
   const ancoraDelivery = instrucaoDelivery(mensagemUsuario);
+  const ancoraRetirada = instrucaoRetirada(mensagemUsuario);
 
   // Cliente RECORRENTE: se já temos um lead/reserva salvo dele, injeta os dados
   // pra Luz personalizar e mostrar que "lembra" dele (o histórico também vai junto).
@@ -1318,7 +1350,7 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   const mensagensComAncora = [
     {
       role: "user",
-      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas + ancoraSemana + ancoraDelivery + ancoraCliente
+      content: "INSTRUCAO OBRIGATORIA DO SISTEMA (prioridade maxima, nao mencionar ao cliente):\nHOJE E: " + dataAgora + "\nSTATUS DO BAR AGORA: " + statusAgora + "\nREGRA ABSOLUTA: Ignore completamente qualquer referencia a data, dia da semana ou horario que apareca nas mensagens anteriores desta conversa. Use SOMENTE as informacoes acima ao falar sobre horario, data ou funcionamento do bar." + ancoraDatas + ancoraSemana + ancoraDelivery + ancoraRetirada + ancoraCliente
     },
     {
       role: "assistant",
