@@ -207,6 +207,8 @@ function formatarContextoDatas(texto) {
 // Quando o cliente pergunta sobre delivery/entrega, injetamos a instrucao
 // deterministica com o link do iFood, garantindo que a Luz sempre encaminhe.
 const LINK_IFOOD = "https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741";
+// Chave PIX (CNPJ) para pagamento de pedidos de RETIRADA feitos pelo WhatsApp.
+const CHAVE_PIX = "14096117000125";
 function mencionaDelivery(texto) {
   if (!texto) return false;
   const t = texto.toLowerCase();
@@ -241,11 +243,10 @@ function mencionaRetirada(texto) {
 }
 function instrucaoRetirada(texto) {
   if (!mencionaRetirada(texto)) return "";
-  return "\n\nINSTRUCAO DETERMINISTICA (RETIRADA): O cliente quer RETIRAR o pedido no local. " +
-    "Responda que SIM! Da pra fazer o pedido aqui mesmo pelo WhatsApp e retirar no proprio bar. " +
-    "Peca de forma simpatica que ele mande o que vai querer (com base no cardapio) que a gente prepara e ele so passa pra buscar. " +
-    "E deixe claro que, se ele preferir, tambem pode simplesmente vir ao bar e fazer o pedido na hora, no local. " +
-    "Confirme o horario de funcionamento se for relevante. NAO diga que nao temos retirada.";
+  return "\n\nINSTRUCAO DETERMINISTICA (RETIRADA + PAGAMENTO): O cliente quer RETIRAR o pedido. Responda que SIM e apresente as DUAS opcoes, perguntando o que ele prefere:\n" +
+    "1) PEDIR PELO WHATSAPP: ele manda o que quer (pelo cardapio), PAGA via PIX na chave " + CHAVE_PIX + " (CNPJ) e ENVIA o comprovante aqui; assim que chegar o comprovante a gente prepara e ele so passa pra buscar.\n" +
+    "2) PEDIR NO LOCAL: se preferir, ele vem ao bar, faz o pedido na hora e paga direto com o garcom.\n" +
+    "Termine perguntando: 'O que voce prefere?'. Mande a chave PIX PURA (so os numeros, sem ** e sem colchetes). NAO diga que nao temos retirada.";
 }
 
 // ── RESOLVER DE DIAS DA SEMANA (nome do dia → DATA exata) ────
@@ -1285,11 +1286,14 @@ FLUXO DE DELIVERY/ENTREGA EM CASA (SEGUIR À RISCA):
 
 FLUXO DE RETIRADA / PEDIR PRA LEVAR (SEGUIR À RISCA):
 - Se o cliente falar em "retirar", "buscar", "pegar no local/balcão", "pra levar", "pra viagem" ou similar:
-    Responda que SIM! 😊 Dá pra fazer o pedido aqui mesmo pelo WhatsApp e RETIRAR no próprio bar.
-    Peça pra ele mandar o que vai querer (com base no cardápio) que a gente prepara e ele só passa pra buscar.
-- Se o cliente NÃO quiser fazer o pedido pelo WhatsApp, tudo bem: ele pode simplesmente vir ao bar e fazer o pedido *na hora, no local*. Deixe as duas opções claras (pedir pelo WhatsApp e já buscar pronto, OU chegar e pedir no balcão na hora).
+    Responda que SIM! 😊 e apresente as DUAS opções de pagamento, deixando o cliente escolher:
+    1) *Pedir pelo WhatsApp*: ele manda o que vai querer (pelo cardápio), paga via *PIX* na chave 14096117000125 (CNPJ) e envia o *comprovante* aqui. Assim que o comprovante chegar, a gente prepara e ele passa pra buscar.
+    2) *Pedir no local*: se preferir, ele vem ao bar, faz o pedido na hora e paga direto com o *garçom*.
+    Termine perguntando: "O que você prefere?"
+- REGRA DE PAGAMENTO (importante): pedido pelo WhatsApp = paga *ANTES por PIX* e manda o comprovante; pedido no local = paga *na hora com o garçom*.
+- Sempre mande a chave PIX PURA (só os números 14096117000125), SEM ** ao redor e SEM colchetes.
 - NUNCA diga que não temos retirada — TEMOS.
-- Diferença pra não confundir: iFood = entrega na casa do cliente; retirada = o cliente faz o pedido (pelo WhatsApp ou no local) e busca/consome no bar.
+- Diferença pra não confundir: iFood = entrega na casa do cliente; retirada = o cliente faz o pedido (pelo WhatsApp com PIX, ou no local com o garçom) e busca/consome no bar.
 
 ═══════════════════════════════════════════
 CARDÁPIO COMPLETO COM PREÇOS — sua FONTE OFICIAL de preços e itens.
