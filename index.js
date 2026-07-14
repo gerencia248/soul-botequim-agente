@@ -242,8 +242,9 @@ function mencionaRetirada(texto) {
 function instrucaoRetirada(texto) {
   if (!mencionaRetirada(texto)) return "";
   return "\n\nINSTRUCAO DETERMINISTICA (RETIRADA): O cliente quer RETIRAR o pedido no local. " +
-    "Responda que SIM! Dá pra fazer o pedido aqui mesmo pelo WhatsApp e retirar no proprio bar. " +
+    "Responda que SIM! Da pra fazer o pedido aqui mesmo pelo WhatsApp e retirar no proprio bar. " +
     "Peca de forma simpatica que ele mande o que vai querer (com base no cardapio) que a gente prepara e ele so passa pra buscar. " +
+    "E deixe claro que, se ele preferir, tambem pode simplesmente vir ao bar e fazer o pedido na hora, no local. " +
     "Confirme o horario de funcionamento se for relevante. NAO diga que nao temos retirada.";
 }
 
@@ -1155,7 +1156,8 @@ TOM E VOCABULÁRIO:
 - MÁXIMO 1 emoji na mensagem inteira (não 1 por parágrafo, não 1 por linha)
 - NÃO repita saudação se já cumprimentou nesta conversa
 - SAUDAÇÃO SEMPRE PRIMEIRO: se o cliente cumprimentar E perguntar algo na MESMA mensagem (ex.: "oi, tá aberto?"), comece CUMPRIMENTANDO de volta ("Oi, tudo bem? 😊") e SÓ DEPOIS responda. NUNCA responda a pergunta antes do cumprimento na primeira mensagem da conversa.
-- NUNCA diga que não tem informações — tudo está neste prompt
+- Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
+- DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para cardápio/horário/reserva/delivery/retirada, que você já sabe.
 
 FORMATAÇÃO WHATSAPP (CRÍTICO — NÃO IGNORAR):
 - Negrito: use UM asterisco *assim*. NUNCA use **dois** (vira markdown literal feio no app)
@@ -1285,8 +1287,9 @@ FLUXO DE RETIRADA / PEDIR PRA LEVAR (SEGUIR À RISCA):
 - Se o cliente falar em "retirar", "buscar", "pegar no local/balcão", "pra levar", "pra viagem" ou similar:
     Responda que SIM! 😊 Dá pra fazer o pedido aqui mesmo pelo WhatsApp e RETIRAR no próprio bar.
     Peça pra ele mandar o que vai querer (com base no cardápio) que a gente prepara e ele só passa pra buscar.
+- Se o cliente NÃO quiser fazer o pedido pelo WhatsApp, tudo bem: ele pode simplesmente vir ao bar e fazer o pedido *na hora, no local*. Deixe as duas opções claras (pedir pelo WhatsApp e já buscar pronto, OU chegar e pedir no balcão na hora).
 - NUNCA diga que não temos retirada — TEMOS.
-- Diferença pra não confundir: iFood = entrega na casa do cliente; retirada = o cliente faz o pedido aqui e vem buscar no bar.
+- Diferença pra não confundir: iFood = entrega na casa do cliente; retirada = o cliente faz o pedido (pelo WhatsApp ou no local) e busca/consome no bar.
 
 ═══════════════════════════════════════════
 CARDÁPIO COMPLETO COM PREÇOS — sua FONTE OFICIAL de preços e itens.
@@ -1718,8 +1721,23 @@ app.post("/webhook", async (req, res) => {
       // sem lead pendente: deixa o Claude responder normal
     }
 
-    const resposta = await chamarClaude(telefone, mensagem);
+    let resposta = await chamarClaude(telefone, mensagem);
     console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] Resposta: " + resposta.substring(0, 80) + "...");
+
+    // ── DÚVIDA QUE O BOT NÃO SABE → encaminha pro GERENTE (Dourado) ──
+    // Quando a Luz não sabe responder, ela marca a resposta com [GERENTE].
+    // O sistema remove o marcador, avisa o cliente e manda a dúvida pro Dourado.
+    if (/\[GERENTE\]/i.test(resposta)) {
+      resposta = resposta.replace(/\[GERENTE\]/gi, "").replace(/\s{2,}/g, " ").trim();
+      if (!resposta) resposta = "Boa pergunta! 😊 Deixa eu confirmar isso com o nosso gerente e já te respondo, tá?";
+      try {
+        await enviarMensagem(CONFIG.NUMERO_DOURADO,
+          "❓ *Dúvida de cliente (a Luz não soube responder)*\n📱 " + telefone +
+          "\n💬 Pergunta: \"" + String(mensagem).substring(0, 300) + "\"\n\nPode esclarecer que eu passo pro cliente. 🙏");
+        console.log("[GERENTE] Dúvida encaminhada ao Dourado | cliente: " + telefone);
+      } catch (e) { console.error("[GERENTE] Falha ao encaminhar dúvida:", e.message); }
+    }
+
     await enviarMensagem(telefone, resposta);
 
     // ── CAPTURA DE LEAD (se Claude mandou link de reserva) ──
