@@ -19,6 +19,7 @@ const CONFIG = {
   PORT: process.env.PORT || 3000,
   NUMERO_DOURADO: "5511954657178",
   NUMERO_ITALO: "5511953580917", // fornecedores e entregadores
+  NUMERO_CRIS: "5511988810344",  // financeiro: boletos, cobranças, atrasos
 };
 
 // ── ACESSO AO PAINEL (auditoria/dashboard) ──
@@ -1012,6 +1013,22 @@ function ehFornecedorOuEntregador(t) {
   ].some(g => txt.includes(g));
 }
 
+// ── COBRANÇA / FINANCEIRO → vai para a Cris ──────────────────
+// Boletos, faturas, cobranças e contas em atraso. Tomamos cuidado para NÃO
+// confundir com o cliente comum perguntando forma de pagamento ou dizendo que
+// o pedido dele atrasou — isso NÃO é financeiro.
+function ehCobrancaFinanceiro(t) {
+  if (!t) return false;
+  const txt = t.toLowerCase();
+  // Termos FORTES: sozinhos já indicam cobrança/financeiro
+  const forte = /(boleto|fatura|cobran[çc]a|cobrar|segunda via|2[ªa] via|inadimpl|duplicata|carn[êe]|nota fiscal|nf-e|setor financeiro|departamento financeiro)/.test(txt);
+  if (forte) return true;
+  // "atraso/vencido/em aberto" só conta se vier junto de algo financeiro
+  const atraso = /(atraso|atrasad|vencid|venceu|vencimento|em aberto|pend[êe]ncia|pendente)/.test(txt);
+  const financeiro = /(pagamento|pagar|conta|contas|parcela|mensalidade|d[ií]vida|d[ée]bito|repasse|valor a pagar)/.test(txt);
+  return atraso && financeiro;
+}
+
 // Mensagem fala de COMIDA (pra não responder com pergunta de drink).
 function falaDeComida(t) {
   if (!t) return false;
@@ -1201,6 +1218,7 @@ INFORMAÇÕES DO BAR:
 - *Telefone do bar* (atendimento geral, reservas pelo widget): (11) 95498-7240
 - *WhatsApp do gerente Dourado* (apenas eventos pessoais e grupos ACIMA de 30 pessoas): (11) 95465-7178 — grupos de ATÉ 30 vão pelo GetinApp, não pro Dourado
 - *Fornecedores e entregadores*: direcione SEMPRE para o Ítalo (11) 95358-0917 (responsável por compras/entregas)
+- *Cobrança, boletos, faturas, contas em atraso e assuntos financeiros*: direcione SEMPRE para a *Cris* (financeiro) no (11) 98881-0344. Isso vale para boleto, 2ª via, fatura, cobrança, vencimento e pagamento em atraso. ATENÇÃO: NÃO confunda com o cliente comum perguntando forma de pagamento do bar (cartão, PIX da retirada) nem com cliente dizendo que o PEDIDO dele atrasou — esses casos você mesma resolve, não manda pra Cris.
 - Instagram: @soulbotequim
 - ATENÇÃO: o telefone do bar e o WhatsApp do Dourado são DIFERENTES. Nunca confunda. Quando precisar passar contato do Dourado, use SEMPRE (11) 95465-7178.
 - Pet friendly | Área externa | Acesso para cadeirantes | Wi-Fi | Banheiro adaptado para cadeirantes
@@ -1503,6 +1521,17 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(CONFIG.NUMERO_ITALO,
           "📦 *Fornecedor/Entregador entrou em contato*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 200) + "\"");
       } catch (e) { console.error("Erro ao avisar Ítalo:", e.message); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // ── COBRANÇA / BOLETO / ATRASO → encaminha para a Cris (financeiro) ──
+    if (ehCobrancaFinanceiro(mensagem)) {
+      console.log("[COBRANÇA/FINANCEIRO] de " + telefone + " → Cris");
+      await enviarMensagem(telefone, "Olá! 😊 Para assuntos de *cobrança, boletos e pagamentos*, quem cuida é a nossa *Cris* (financeiro), no (11) 98881-0344. Pode falar direto com ela que te atende certinho!");
+      try {
+        await enviarMensagem(CONFIG.NUMERO_CRIS,
+          "💰 *Assunto financeiro / cobrança*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 250) + "\"");
+      } catch (e) { console.error("Erro ao avisar Cris:", e.message); }
       return res.status(200).json({ ok: true });
     }
 
