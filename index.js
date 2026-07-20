@@ -1021,7 +1021,7 @@ function ehCobrancaFinanceiro(t) {
   if (!t) return false;
   const txt = t.toLowerCase();
   // Termos FORTES: sozinhos já indicam cobrança/financeiro
-  const forte = /(boleto|fatura|cobran[çc]a|cobrar|segunda via|2[ªa] via|inadimpl|duplicata|carn[êe]|nota fiscal|nf-e|setor financeiro|departamento financeiro)/.test(txt);
+  const forte = /(boleto|fatura|cobran[çc]a|cobrar|segunda via|2[ªa] via|inadimpl|duplicata|carn[êe]|nota fiscal|nf-e|financeiro|t[íi]tulo em aberto|quita|regularizar|d[ií]vida|contas a pagar|contas a receber|valor(es)? em aberto|d[ée]bito em aberto)/.test(txt);
   if (forte) return true;
   // "atraso/vencido/em aberto" só conta se vier junto de algo financeiro
   const atraso = /(atraso|atrasad|vencid|venceu|vencimento|em aberto|pend[êe]ncia|pendente)/.test(txt);
@@ -1176,6 +1176,7 @@ TOM E VOCABULÁRIO:
 - SAUDAÇÃO SEMPRE PRIMEIRO: se o cliente cumprimentar E perguntar algo na MESMA mensagem (ex.: "oi, tá aberto?"), comece CUMPRIMENTANDO de volta ("Oi, tudo bem? 😊") e SÓ DEPOIS responda. NUNCA responda a pergunta antes do cumprimento na primeira mensagem da conversa.
 - Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
 - DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para cardápio/horário/reserva/delivery/retirada, que você já sabe.
+- DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai confirmar com a *Cris* (financeiro). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou confirmar isso com a nossa Cris do financeiro e já te respondo." NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
 
 FORMATAÇÃO WHATSAPP (CRÍTICO — NÃO IGNORAR):
 - Negrito: use UM asterisco *assim*. NUNCA use **dois** (vira markdown literal feio no app)
@@ -1666,6 +1667,13 @@ app.post("/webhook", async (req, res) => {
     }
 
     if (querFalarComHumano(mensagem)) {
+      // Se o assunto for FINANCEIRO, o atendimento humano é com a CRIS, não com o Dourado.
+      if (ehCobrancaFinanceiro(mensagem)) {
+        await enviarMensagem(telefone, "Claro! Para assuntos de *cobrança e financeiro*, quem te atende é a *Cris* no (11) 98881-0344. Já avisei ela por aqui também! 😊");
+        await enviarMensagem(CONFIG.NUMERO_CRIS, "💰 *Contato quer falar sobre financeiro*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 250) + "\"");
+        console.log("[HUMANO/FINANCEIRO] " + telefone + " → Cris");
+        return res.status(200).json({ ok: true });
+      }
       await enviarMensagem(telefone, "Claro! Vou acionar o Dourado para te atender pessoalmente. Um momento!");
       await enviarMensagem(CONFIG.NUMERO_DOURADO, "🔔 *Luz — Atendimento Humano*\n\nCliente " + telefone + " quer falar com atendente.\nMensagem: \"" + mensagem + "\"");
       return res.status(200).json({ ok: true });
@@ -1757,18 +1765,27 @@ app.post("/webhook", async (req, res) => {
     let resposta = await chamarClaude(telefone, mensagem);
     console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] Resposta: " + resposta.substring(0, 80) + "...");
 
-    // ── DÚVIDA QUE O BOT NÃO SABE → encaminha pro GERENTE (Dourado) ──
-    // Quando a Luz não sabe responder, ela marca a resposta com [GERENTE].
-    // O sistema remove o marcador, avisa o cliente e manda a dúvida pro Dourado.
-    if (/\[GERENTE\]/i.test(resposta)) {
-      resposta = resposta.replace(/\[GERENTE\]/gi, "").replace(/\s{2,}/g, " ").trim();
-      if (!resposta) resposta = "Boa pergunta! 😊 Deixa eu confirmar isso com o nosso gerente e já te respondo, tá?";
+    // ── DÚVIDA QUE O BOT NÃO SABE → encaminha pro responsável certo ──
+    // [FINANCEIRO] → Cris (cobrança/boleto/pagamento). [GERENTE] → Dourado (o resto).
+    // Se a pergunta for claramente financeira, vai pra Cris mesmo que venha [GERENTE].
+    if (/\[GERENTE\]|\[FINANCEIRO\]/i.test(resposta)) {
+      const marcadoFinanceiro = /\[FINANCEIRO\]/i.test(resposta) || ehCobrancaFinanceiro(mensagem);
+      resposta = resposta.replace(/\[GERENTE\]|\[FINANCEIRO\]/gi, "").replace(/\s{2,}/g, " ").trim();
+      if (!resposta) {
+        resposta = marcadoFinanceiro
+          ? "Boa pergunta! 😊 Vou confirmar isso com a nossa *Cris* (financeiro) e já te respondo, tá?"
+          : "Boa pergunta! 😊 Deixa eu confirmar isso com o nosso gerente e já te respondo, tá?";
+      }
+      const destino = marcadoFinanceiro ? CONFIG.NUMERO_CRIS : CONFIG.NUMERO_DOURADO;
+      const titulo = marcadoFinanceiro
+        ? "💰 *Dúvida FINANCEIRA (a Luz não soube responder)*"
+        : "❓ *Dúvida de cliente (a Luz não soube responder)*";
       try {
-        await enviarMensagem(CONFIG.NUMERO_DOURADO,
-          "❓ *Dúvida de cliente (a Luz não soube responder)*\n📱 " + telefone +
+        await enviarMensagem(destino,
+          titulo + "\n📱 " + telefone +
           "\n💬 Pergunta: \"" + String(mensagem).substring(0, 300) + "\"\n\nPode esclarecer que eu passo pro cliente. 🙏");
-        console.log("[GERENTE] Dúvida encaminhada ao Dourado | cliente: " + telefone);
-      } catch (e) { console.error("[GERENTE] Falha ao encaminhar dúvida:", e.message); }
+        console.log("[" + (marcadoFinanceiro ? "FINANCEIRO→CRIS" : "GERENTE→DOURADO") + "] Dúvida encaminhada | cliente: " + telefone);
+      } catch (e) { console.error("[ESCALONAMENTO] Falha ao encaminhar dúvida:", e.message); }
     }
 
     await enviarMensagem(telefone, resposta);
