@@ -122,6 +122,10 @@ function extrairDadosReserva(texto) {
 function pareceConfirmacao(texto) {
   if (!texto) return false;
   const t = texto.toLowerCase();
+  // GUARDA ANTI-NEGAÇÃO: "ainda não confirmei", "não consegui reservar", "não fiz a
+  // reserva" NÃO são confirmação. Sem isso, o bot marcava a reserva como confirmada
+  // (e avisava o Dourado) por engano quando o cliente dizia justamente o contrário.
+  if (/\bn[ãa]o\b|nao consegui|não consegui/.test(t)) return false;
   return ["confirmei","confirmado","fiz a reserva","reservei","reserva feita","ta feito","tá feito","já confirmei","ja confirmei","ja reservei","já reservei"].some(p => t.includes(p));
 }
 
@@ -760,7 +764,15 @@ const OPCOES_VEGETARIANAS = `🥗 *OPÇÕES VEGETARIANAS — Soul Botequim*
 • Legumes na Brasa R$70 — Com chimichurri e farofa de cebola`;
 
 // ── FILTROS ──────────────────────────────────────────────────
-const palavroes = ["puta","merda","caralho","porra","viado","idiota","imbecil","cretino","otario","otário","fdp","arrombado","babaca"];
+// Só OFENSAS claras/direcionadas — NÃO palavrões de desabafo comum (merda, porra,
+// caralho, puta, idiota) que o cliente usa sem ofender ("que merda, perdi a reserva").
+// Assim o bot não dá bronca em quem só está desabafando; ele atende normalmente.
+const palavroes = [
+  "viado","viadinho","bicha","fdp","filho da puta","filha da puta","arrombado","arrombada",
+  "corno","corno","escroto","otário","otario","babaca","cretino","imbecil","seu lixo",
+  "vai se fuder","vai se foder","vai tomar no cu","vtnc","toma no cu","vai a merda","seu merda",
+  "atendente de merda","bot de merda","robô de merda","que porcaria de atendimento"
+];
 function contemPalavroes(t) { return palavroes.some(p => t.toLowerCase().includes(p)); }
 
 function querFalarComHumano(t) {
