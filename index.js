@@ -2197,27 +2197,3 @@ app.get("/limpar-historico", async (req, res) => {
     res.status(500).json({ erro: e.message });
   }
 });
-
-// ⚠️ TEMPORÁRIO (REMOVER APÓS O USO): remove da memória de TODOS os clientes as
-// mensagens que mencionam a Copa (evento encerrado), preservando o resto do
-// histórico de cada um. Protegido por chave. GET /admin/limpar-copa?key=...
-app.get("/admin/limpar-copa", async (req, res) => {
-  if (req.query.key !== "audit-soul-2026-9fk3qz7wpx") return res.status(403).json({ erro: "negado" });
-  try {
-    const re = /copa|mundial|torcer pelo brasil|jogo do brasil|jogos da copa|final da copa|jogo da copa/i;
-    const ks = await redis.keys("memoria:*");
-    let conversasLimpas = 0, mensagensRemovidas = 0;
-    for (const k of ks) {
-      const v = await redis.get(k); let h;
-      try { h = JSON.parse(v); } catch (e) { continue; }
-      if (!Array.isArray(h)) continue;
-      const nv = h.filter(m => !(m && typeof m.content === "string" && re.test(m.content)));
-      if (nv.length !== h.length) {
-        mensagensRemovidas += h.length - nv.length;
-        conversasLimpas++;
-        await redis.set(k, JSON.stringify(nv));
-      }
-    }
-    res.json({ ok: true, totalConversas: ks.length, conversasLimpas, mensagensRemovidas });
-  } catch (e) { res.status(500).json({ erro: e.message }); }
-});
