@@ -896,7 +896,7 @@ function extrairDadosEvento(mensagem) {
     { re: /confraterniz/,                           label: "Confraternização" },
     { re: /festa entre amigos|encontro de amigos/,  label: "Festa entre amigos" },
     { re: /happy hour/,                             label: "Happy hour" },
-    { re: /jogo (do|da) |da copa|futebol|assistir o jogo|ver o jogo/, label: "Ver o jogo" },
+    { re: /jogo (do|da) |futebol|assistir o jogo|ver o jogo/, label: "Ver o jogo" },
   ];
   for (const tp of tipos) { if (tp.re.test(txt)) { dados.tipoEvento = tp.label; break; } }
   // horário (ex.: "às 14h", "a partir das 20h", "14 hrs", "meio-dia")
@@ -915,12 +915,12 @@ function extrairDadosEvento(mensagem) {
 }
 
 // Se o cliente pediu um LUGAR específico, devolve o aviso (inserido antes) de que,
-// por causa da alta demanda dos jogos da Copa, NÃO dá pra garantir lugar cativo.
+// em dias de maior movimento, NÃO dá pra garantir lugar cativo.
 // Retorna "" se a observação não for sobre lugar.
 function avisoLugarCativo(observacoes) {
   if (!observacoes) return "";
   if (!/\b(tv|televis|telona|externa|parte de fora|l[áa] fora|canto|mesa|[áa]rea|varanda|jardim)\b/i.test(observacoes)) return "";
-  return "\n\n📍 Sobre o lugar que você pediu (" + observacoes + "): já deixei anotado! Só um detalhe importante: por causa da alta procura nos jogos da Copa, não dá pra garantir lugar cativo, mas a equipe vai fazer o possível pra te atender. 😊";
+  return "\n\n📍 Sobre o lugar que você pediu (" + observacoes + "): já deixei anotado! Só um detalhe importante: em dias de maior movimento, não dá pra garantir lugar cativo, mas a equipe vai fazer o possível pra te atender. 😊";
 }
 
 // Se o grupo já é conhecido e tem 30 pessoas ou MENOS, manda direto pro GetinApp
@@ -1054,11 +1054,11 @@ function naoConseguiuReservar(t) {
 }
 
 // Mensagem enviada quando o cliente não consegue reservar pelo GetIn.
-const MSG_RESERVA_FALHOU = `Se você não está conseguindo fazer sua reserva pelo Get In, pode vir tranquilamente para o bar! Teremos vagas disponíveis para assistir ao jogo do Brasil.
+const MSG_RESERVA_FALHOU = `Se você não está conseguindo fazer sua reserva pelo Get In, pode vir tranquilamente para o bar! Teremos vagas disponíveis pra te receber.
 
-Recomendamos apenas que chegue cedo para garantir seu lugar e aproveitar toda a emoção da partida com a gente.
+Recomendamos apenas que chegue cedo para garantir seu lugar e aproveitar tudo com a gente.
 
-Esperamos você para torcer pelo Brasil em um ambiente animado, com boa comida, bebidas geladas e muita energia positiva!`;
+Esperamos você em um ambiente animado, com boa comida, bebidas geladas e muita energia positiva!`;
 
 // ============================================================
 // CORREÇÃO HORÁRIO (v2) — getStatusHorario()
@@ -1206,14 +1206,6 @@ HORÁRIOS DE FUNCIONAMENTO:
 - Domingo: 12h até 21h
 - Segunda-feira: FECHADO
 
-EVENTO ESPECIAL — JOGO DA COPA (DOMINGO 05/07/2026):
-- Domingo, 05/07/2026, vamos transmitir o jogo da Copa no projetor e na TV (domingo o bar abre normal, 12h às 21h).
-- ⏰ RESERVAS pelo GetinApp só até as 14h, com 15 minutos de TOLERÂNCIA (a mesa fica guardada até no máximo 14h15).
-- 👥 REGRA DA MESA (SEMPRE avise isso — NUNCA omita a consequência): na hora, a mesa precisa ter MAIS DE 50% das pessoas do grupo presentes. Se NÃO tiver mais da metade do grupo na mesa, a mesa será SEPARADA e liberada para outros clientes. Toda vez que falar dos 50%, diga JUNTO essa consequência (que a mesa é liberada), de forma clara e simpática — não deixe o cliente descobrir isso só na hora.
-- 🚫 NÃO confirme reserva pelo bot: você (Luz) NUNCA diz que a reserva está confirmada para esse dia. A reserva só vale quando o cliente faz pelo GetinApp: https://widget.getinapp.com.br/d6NZKJ6V
-- Se o cliente NÃO conseguir reservar pelo GetinApp, nesse domingo o atendimento é por ORDEM DE CHEGADA (sem reserva garantida) — oriente a chegar cedo pra garantir o lugar.
-- Quando o cliente perguntar sobre o jogo da Copa de domingo (05/07), explique essas regras de forma curta e simpática: reserva pelo GetinApp até as 14h (tolerância de 15 min), precisa de mais de 50% do grupo na mesa — SENÃO a mesa é separada e liberada pra outros clientes — e quem não reservar entra por ordem de chegada.
-
 INFORMAÇÕES DO BAR:
 - Endereço: Av. Padre Antônio José dos Santos, 812 — Brooklin, SP
 - *Telefone do bar* (atendimento geral, reservas pelo widget): (11) 95498-7240
@@ -1228,7 +1220,7 @@ INFORMAÇÕES DO BAR:
 - Música: Jazz, Blues e Brasilidades — programação no Instagram @soulbotequim
 - Drink mais famoso: Fitzgerald ⭐
 - Reservas: https://widget.getinapp.com.br/d6NZKJ6V
-- IMPORTANTE CHEGAR CEDO: principalmente em dias cheios e de jogos, oriente sempre o cliente a chegar cedo. Se chegar muito tarde, NÃO garantimos que vamos conseguir atender/acomodar. Diga isso com simpatia, como um conselho pra ele não correr o risco de ficar sem lugar.
+- IMPORTANTE CHEGAR CEDO: principalmente em dias cheios e de maior movimento, oriente sempre o cliente a chegar cedo. Se chegar muito tarde, NÃO garantimos que vamos conseguir atender/acomodar. Diga isso com simpatia, como um conselho pra ele não correr o risco de ficar sem lugar.
 - Sem valet — estacionamentos no entorno
 - Aniversariante do dia: 1 drink ou chopp de cortesia ANTES do pagamento da conta (somente para o aniversariante do dia, não para acompanhantes) | Pode trazer somente bolo
 - Não disponibilizamos barril de chopp para aniversário ou comemorações — somente o chopp que está nos bicos
@@ -1236,7 +1228,6 @@ INFORMAÇÕES DO BAR:
 - Sem voucher/vale-alimentação
 - Pagamento: crédito (sem parcelamento), débito, Pix, dinheiro, Amex
 - Temos projetor e televisão | Transmitimos jogos de futebol e outros esportes
-- COPA DO MUNDO: vamos transmitir TODOS os jogos da Copa (não só os do Brasil), no projetor e na TV! ⚽🌍 Quando o cliente perguntar sobre qualquer jogo da Copa (Brasil ou outras seleções), confirme com animação que vamos passar e convide a garantir a mesa/reserva (grupos até 30 pelo link do GetinApp).
 - Temos opções veganas no cardápio
 - Não temos petisco para animais (pet friendly apenas para a presença dos pets)
 - DELIVERY/ENTREGA (em casa): fazemos entrega pelo iFood. Link do cardápio e pedidos: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
@@ -1282,7 +1273,7 @@ FLUXO DE RESERVA (SEGUIR À RISCA):
     Em seguida peça follow-up: "Me avisa aqui quando confirmar, beleza?"
 - NUNCA mande o link de reserva mais de uma vez na mesma conversa
 - O link deve sempre aparecer puro, SEM ** ao redor, SEM colchetes
-- MESA/LUGAR ESPECÍFICO: se o cliente quiser uma mesa ou lugar específico no bar (ex.: na área externa, perto da TV, mesa do canto, mesa grande), oriente-o a escrever esse pedido no campo de *observação* na hora de fazer a reserva pelo link do GetinApp. IMPORTANTE: NÃO garanta lugar cativo. Por causa da ALTA DEMANDA durante os jogos da Copa, não conseguimos assegurar lugar fixo no restaurante. Deixe isso claro de forma simpática, algo como: "Pode anotar sim! É só colocar o lugar que você prefere no campo de *observação* quando fizer a reserva. 😊 Só um detalhe importante: por causa da alta procura nos jogos da Copa, a gente não consegue garantir lugar cativo, mas a equipe vai fazer o possível pra te atender!". Sempre registre o pedido na observação, mas seja honesta que é sujeito à disponibilidade.
+- MESA/LUGAR ESPECÍFICO: se o cliente quiser uma mesa ou lugar específico no bar (ex.: na área externa, perto da TV, mesa do canto, mesa grande), oriente-o a escrever esse pedido no campo de *observação* na hora de fazer a reserva pelo link do GetinApp. IMPORTANTE: NÃO garanta lugar cativo. Em dias de maior movimento, não conseguimos assegurar lugar fixo no restaurante. Deixe isso claro de forma simpática, algo como: "Pode anotar sim! É só colocar o lugar que você prefere no campo de *observação* quando fizer a reserva. 😊 Só um detalhe importante: em dias de maior movimento, a gente não consegue garantir lugar cativo, mas a equipe vai fazer o possível pra te atender!". Sempre registre o pedido na observação, mas seja honesta que é sujeito à disponibilidade.
 
 REGRA DO TAMANHO DO GRUPO (CRÍTICA — o limite é 30, siga à risca):
 - ATÉ 30 pessoas (inclusive — ex.: 2, 10, 25, 30): SEMPRE mande o link do GetinApp (https://widget.getinapp.com.br/d6NZKJ6V). NÃO encaminhe pro Dourado. 25 ou 30 pessoas = GetinApp, NUNCA Dourado.
@@ -2148,73 +2139,6 @@ app.get("/test-dourado", async (req, res) => {
       <p>Erro: <code>${e.message}</code></p>
       <p>Provável causa: número errado, Dourado bloqueou o bot, ou Z-API com problema.</p>
     </body></html>`);
-  }
-});
-
-// ── DISPARO: AVISO DO JOGO DO BRASIL (SEGUNDA 29/06) ─────────
-// Envia UMA mensagem para clientes que JÁ conversaram com o bot e
-// demonstraram interesse no jogo/Copa (mencionaram, em mensagens DELES,
-// "jogo", "brasil", "copa", "assistir", "partida", "seleção", "futebol").
-// Protegido por token. DRY-RUN por padrão: só LISTA quem receberia, sem enviar.
-// Para ENVIAR DE VERDADE, acrescente &confirmar=ENVIAR na URL.
-// Acesse: GET /disparar-jogo?phone=5511954657178
-const MSG_AVISO_JOGO = `Oi! Aqui é a Luz, do Soul Botequim 🍺
-
-Passando pra avisar: nesta *segunda-feira (29/06)* vamos abrir *exclusivamente* pra transmitir o *jogo do Brasil*! ⚽🇧🇷
-
-🕐 Abertura especial: das *12h às 20h*
-⏰ O jogo começa às *14h*
-
-📌 Reservas só até as *12h30* desta segunda! Depois disso é por ordem de chegada, então garanta a sua: https://widget.getinapp.com.br/d6NZKJ6V
-
-Chega cedo pra não perder o lugar e vem torcer com a gente! 🇧🇷`;
-
-app.get("/disparar-jogo", async (req, res) => {
-  if (!painelAutorizado(req)) {
-    return res.status(403).json({ erro: "Acesso negado. Use ?phone=NUMERO_DO_GERENTE (ou ?token=SEGREDO)." });
-  }
-  try {
-    const enviarDeVerdade = req.query.confirmar === "ENVIAR";
-    const termos = ["jogo","brasil","copa","assistir","partida","seleção","selecao","futebol"];
-    const keys = await redis.keys("memoria:*");
-    const lista = [];
-    for (const k of keys) {
-      const tel = k.replace("memoria:", "");
-      if (/@|status|newsletter|broadcast/i.test(tel)) continue; // ignora grupos/canais
-      const v = await redis.get(k);
-      if (!v) continue;
-      let hist; try { hist = JSON.parse(v); } catch (e) { continue; }
-      // Só olha as mensagens DO CLIENTE (role user), pra não dar falso-positivo
-      // com respostas da Luz que mencionam Copa/jogo.
-      const textoCliente = hist
-        .filter(m => m.role === "user" && typeof m.content === "string")
-        .map(m => m.content).join(" ").toLowerCase();
-      if (termos.some(t => textoCliente.includes(t))) lista.push(tel);
-    }
-    const destinatarios = [...new Set(lista)];
-
-    if (!enviarDeVerdade) {
-      return res.json({
-        modo: "PREVIEW (nada foi enviado)",
-        totalDestinatarios: destinatarios.length,
-        telefones: destinatarios,
-        mensagemQueSeraEnviada: MSG_AVISO_JOGO,
-        comoEnviarDeVerdade: "Acrescente &confirmar=ENVIAR no final da URL."
-      });
-    }
-
-    let enviados = 0; const falhas = [];
-    for (const tel of destinatarios) {
-      try {
-        await enviarMensagem(tel, MSG_AVISO_JOGO, { fracionar: false });
-        enviados++;
-        await new Promise(r => setTimeout(r, 4000)); // 4s entre cada (reduz risco de bloqueio)
-      } catch (e) { falhas.push({ tel, erro: e.message }); }
-    }
-    console.log("[DISPARO-JOGO] Enviados: " + enviados + "/" + destinatarios.length);
-    res.json({ modo: "ENVIADO", enviados, totalDestinatarios: destinatarios.length, falhas });
-  } catch (e) {
-    res.status(500).json({ erro: e.message });
   }
 });
 
