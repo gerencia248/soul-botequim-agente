@@ -238,7 +238,7 @@ function mencionaRetirada(texto) {
     "retirar","retirada","retiro","pra retirar","para retirar",
     "buscar","vou buscar","pegar no local","pegar ai","pegar aí","pego ai","pego aí",
     "balcão","balcao","no balcao","no balcão",
-    "pra levar","para levar","levar pra casa","levar para casa","pra viagem","para viagem","viagem",
+    "pra levar","para levar","levar pra casa","levar para casa","pra viagem","para viagem","pro viagem",
     "take away","takeaway","pra retira","retira no local","passar ai","passar aí","passo ai","passo aí"
   ].some(k => t.includes(k));
 }
@@ -318,8 +318,10 @@ function querEventoOuFestaPessoal(t) {
   // Só eventos PESSOAIS específicos vão pro Dourado independente do tamanho.
   // "festa"/"comemoração" genéricos foram removidos: "festa de 10 amigos" deve ir
   // pelo GetinApp normal (até 30), não pro Dourado.
+  // "aniversário" solto NÃO entra aqui: "é meu aniversário" é só informativo.
+  // Aniversário COM intenção de organizar é tratado em mencionaEventoParaPerguntar.
   return [
-    "aniversário","aniversario","casamento","bodas","formatura","despedida de solteiro",
+    "casamento","bodas","formatura","despedida de solteiro",
     "despedida de solteira","chá de bebê","cha de bebe","chá de panela","cha de panela",
     "bate-papo de noivos",
     "evento privado","evento particular","reservar o bar","fechar o bar","fechamento do bar"
@@ -763,7 +765,11 @@ function contemPalavroes(t) { return palavroes.some(p => t.toLowerCase().include
 
 function querFalarComHumano(t) {
   return ["falar com atendente","falar com humano","falar com pessoa","atendente humano","quero um humano",
-    "não quero robô","nao quero robo","falar com dourado","fala com o dourado","gerente"].some(g => t.toLowerCase().includes(g));
+    "não quero robô","nao quero robo","falar com dourado","fala com o dourado",
+    // "gerente" só conta com intenção real de FALAR/SER ATENDIDO por ele
+    // (evita disparar em "quem é o gerente?", "tem gerente de eventos?").
+    "falar com o gerente","falar com gerente","com o gerente","chamar o gerente","chamar gerente",
+    "quero o gerente","pro gerente","chama o gerente","me passa pro gerente"].some(g => t.toLowerCase().includes(g));
 }
 
 // Mensagem que é SÓ uma saudação (sem pergunta/pedido). Serve pra responder
@@ -815,9 +821,20 @@ function mencionaPacoteFechado(t) {
 // pacote fechado ou só reserva, ele pergunta antes de rotear.
 function mencionaEventoParaPerguntar(t) {
   const txt = t.toLowerCase();
-  const generico = ["evento","festa","confraterniz","comemora","formatura","aniversário","aniversario",
-    "casamento","despedida","bodas"].some(g => txt.includes(g));
-  return generico || querEventoCorporativo(t) || querEventoOuFestaPessoal(t);
+  // Palavras ambíguas ("evento","festa","aniversário"...) só contam se houver
+  // intenção de ORGANIZAR/RESERVAR — senão "tem festa hoje?" ou "hoje é meu
+  // aniversário" caíam aqui e o bot perguntava "pacote ou reserva?" fora de hora.
+  const ambiguo = ["evento","festa","confraterniz","comemora","aniversário","aniversario"].some(g => txt.includes(g));
+  const intencao = [
+    "quero","queria","gostaria","pretendo","planejo","pensando","penso em",
+    "fazer","organizar","montar","marcar","reservar","reserva","comemorar",
+    "fechar","alugar","orçamento","orcamento","pacote","espaço","espaco",
+    "pessoas","convidados","open bar","buffet"
+  ].some(g => txt.includes(g));
+  const eventoComIntencao = ambiguo && intencao;
+  // Eventos pessoais fortes (casamento, formatura, despedida de solteiro...) e
+  // corporativos já vêm tratados pelas funções específicas.
+  return eventoComIntencao || querEventoCorporativo(t) || querEventoOuFestaPessoal(t);
 }
 
 // Interpreta a RESPOSTA do cliente à pergunta "pacote fechado ou só reserva?".
@@ -1021,8 +1038,13 @@ function ehCobrancaFinanceiro(t) {
   if (!t) return false;
   const txt = t.toLowerCase();
   // Termos FORTES: sozinhos já indicam cobrança/financeiro
-  const forte = /(boleto|fatura|cobran[çc]a|cobrar|segunda via|2[ªa] via|inadimpl|duplicata|carn[êe]|nota fiscal|nf-e|financeiro|t[íi]tulo em aberto|quita|regularizar|d[ií]vida|contas a pagar|contas a receber|valor(es)? em aberto|d[ée]bito em aberto)/.test(txt);
+  const forte = /(boleto|fatura|segunda via|2[ªa] via|inadimpl|duplicata|carn[êe]|nota fiscal|nf-e|financeiro|t[íi]tulo em aberto|quita|regularizar|d[ií]vida|contas a pagar|contas a receber|valor(es)? em aberto|d[ée]bito em aberto)/.test(txt);
   if (forte) return true;
+  // "cobrança/cobrar" só conta como financeiro COM contexto de dívida/documento
+  // (evita "tem cobrança de couvert/rolha/taxa?" cair no financeiro/Cris).
+  const cobranca = /(cobran[çc]a|cobrar|cobrando)/.test(txt);
+  const contextoFin = /(boleto|fatura|d[ií]vida|d[ée]bito|em atraso|atrasad|vencid|vencimento|nota fiscal|repasse|t[íi]tulo|valor em aberto|pagamento em atraso)/.test(txt);
+  if (cobranca && contextoFin) return true;
   // "atraso/vencido/em aberto" só conta se vier junto de algo financeiro
   const atraso = /(atraso|atrasad|vencid|venceu|vencimento|em aberto|pend[êe]ncia|pendente)/.test(txt);
   const financeiro = /(pagamento|pagar|conta|contas|parcela|mensalidade|d[ií]vida|d[ée]bito|repasse|valor a pagar)/.test(txt);
@@ -1343,8 +1365,16 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
   // calculamos deterministicamente o dia da semana e injetamos no contexto.
   const ancoraDatas = formatarContextoDatas(mensagemUsuario);
   const ancoraSemana = resolverDiasSemana(mensagemUsuario);
-  const ancoraDelivery = instrucaoDelivery(mensagemUsuario);
-  const ancoraRetirada = instrucaoRetirada(mensagemUsuario);
+  // Entrega (iFood) x Retirada (no bar): se o cliente mencionou os DOIS na mesma
+  // mensagem, não injetamos as duas instruções (viravam resposta confusa) —
+  // pedimos pra Luz perguntar qual ele quer antes de dar os detalhes.
+  let ancoraDelivery = "", ancoraRetirada = "";
+  if (mencionaDelivery(mensagemUsuario) && mencionaRetirada(mensagemUsuario)) {
+    ancoraRetirada = "\n\nINSTRUCAO DETERMINISTICA (ENTREGA x RETIRADA): O cliente falou de entrega E de retirada. Pergunte de forma curta e simpatica o que ele prefere: ENTREGA em casa (pelo iFood) OU RETIRADA no bar (pedido pelo WhatsApp com PIX, ou no local com o garcom). So depois da escolha, passe os detalhes/link.";
+  } else {
+    ancoraDelivery = instrucaoDelivery(mensagemUsuario);
+    ancoraRetirada = instrucaoRetirada(mensagemUsuario);
+  }
 
   // Cliente RECORRENTE: se já temos um lead/reserva salvo dele, injeta os dados
   // pra Luz personalizar e mostrar que "lembra" dele (o histórico também vai junto).
@@ -1505,8 +1535,16 @@ app.post("/webhook", async (req, res) => {
 
     console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] De " + telefone + ": " + mensagem);
 
+    // Se o cliente está NO MEIO de um fluxo (coleta de evento, lead do Dourado
+    // ou aguardando "pacote ou reserva?"), a resposta dele pertence ao fluxo —
+    // NÃO desviamos por gatilhos de fornecedor/financeiro (ex.: ele cita "nota
+    // fiscal" ao descrever o evento e era jogado pra Cris no meio da coleta).
+    const emFluxoAtivo = (await temFluxo("evento", telefone))
+      || (await temFluxo("lead", telefone))
+      || (await temFluxo("perguntapacote", telefone));
+
     // ── FORNECEDOR / ENTREGADOR → encaminha para o Ítalo ──
-    if (ehFornecedorOuEntregador(mensagem)) {
+    if (!emFluxoAtivo && ehFornecedorOuEntregador(mensagem)) {
       console.log("[FORNECEDOR/ENTREGADOR] de " + telefone + " → Ítalo");
       await enviarMensagem(telefone, "Olá! 😊 Para *fornecedores e entregas*, por favor fale direto com o nosso responsável *Ítalo* no (11) 95358-0917. Ele cuida disso e vai te atender certinho!");
       try {
@@ -1517,7 +1555,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // ── COBRANÇA / BOLETO / ATRASO → encaminha para a Cris (financeiro) ──
-    if (ehCobrancaFinanceiro(mensagem)) {
+    if (!emFluxoAtivo && ehCobrancaFinanceiro(mensagem)) {
       console.log("[COBRANÇA/FINANCEIRO] de " + telefone + " → Cris");
       await enviarMensagem(telefone, "Olá! 😊 Para assuntos de *cobrança, boletos e pagamentos*, quem cuida é a nossa *Cris* (financeiro), no (11) 98881-0344. Pode falar direto com ela que te atende certinho!");
       try {
