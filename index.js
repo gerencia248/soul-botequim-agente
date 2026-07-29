@@ -1031,15 +1031,29 @@ function pedeSugestao(t) {
 function ehFornecedorOuEntregador(t) {
   if (!t) return false;
   const txt = t.toLowerCase();
-  return [
+  // 1) Termos que sozinhos já indicam fornecedor / entregador / comprador do bar.
+  const direto = [
     "fornecedor","fornecedora","fornecimento","fornecer",
     "entregador","entregadora","motoboy","motoqueiro",
     "transportadora","transportador","distribuidora","distribuidor",
-    "representante comercial","sou representante","mercadoria","mercadorias",
+    "representante comercial","sou representante","represento a","represento uma",
+    "mercadoria","mercadorias",
     "vim entregar","vim fazer entrega","trazer a entrega","entrega de mercadoria",
     "cheguei com a entrega","na portaria","pedido de compra","abastecimento",
-    "reposição","reposicao","descarregar"
+    "reposição","reposicao","descarregar",
+    // Fornecedor procurando QUEM CUIDA DAS COMPRAS do bar (comprador).
+    "setor de compras","departamento de compras","área de compras","area de compras",
+    "gerente de compras","responsável pelas compras","responsavel pelas compras",
+    "responsável de compras","responsavel de compras","responsável por compras","responsavel por compras",
+    "responsável pela compra","responsavel pela compra","comprador","compradora",
+    "faz as compras","faz a compra","fazem as compras","cuida das compras","cuidam das compras",
+    "quem faz as compras","quem compra as bebida","quem compra a bebida","quem cuida das compras"
   ].some(g => txt.includes(g));
+  if (direto) return true;
+  // 2) Fornecedor querendo VENDER / oferecer produtos para o bar (cold call B2B).
+  const querOferecer = /(quero (oferecer|apresentar|vender)|tenho uma proposta|proposta comercial|apresentar (meu|nosso)s? produtos|trabalho com (distribui|fornec)|sou da distribuidora|represento )/.test(txt);
+  if (querOferecer) return true;
+  return false;
 }
 
 // ── COBRANÇA / FINANCEIRO → vai para a Cris ──────────────────
