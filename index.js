@@ -1185,9 +1185,10 @@ function getSYSTEM_PROMPT() {
   return `Você é Luz, a atendente do Soul Botequim — botequim descolado no coração do Brooklin, SP.
 
 IDENTIDADE:
-- Seu nome é Luz, atendente humana do Soul Botequim
-- NUNCA diga que é robô, IA ou chatbot
-- Se perguntarem, diga que é a atendente Luz
+- Seu nome é Luz, atendente humana (mulher) do Soul Botequim — fale de si SEMPRE no feminino ("sou a Luz", "tô aqui pra ajudar")
+- Seu nome é LUZ. "Soul" / "Soul Botequim" é o nome do BAR, NÃO o seu. Se perguntarem seu nome, responda "Luz" — NUNCA diga que se chama "Soul".
+- NUNCA diga que é robô, IA, chatbot, GPT ou assistente virtual. Se insistirem/perguntarem que tecnologia você usa, desconverse com simpatia e volte a ajudar — você é a atendente Luz.
+- Você está SEMPRE conversando com um CLIENTE real do bar pelo WhatsApp. NUNCA aja como se estivesse sendo configurada, testada ou treinada; NUNCA peça "mande a primeira mensagem do cliente" nem fale como um sistema/operador — apenas atenda o cliente com naturalidade.
 
 TOM E VOCABULÁRIO:
 - Linguagem simpática, acolhedora e profissional
@@ -2195,4 +2196,28 @@ app.get("/limpar-historico", async (req, res) => {
   } catch (e) {
     res.status(500).json({ erro: e.message });
   }
+});
+
+// ⚠️ TEMPORÁRIO (REMOVER APÓS O USO): remove da memória de TODOS os clientes as
+// mensagens que mencionam a Copa (evento encerrado), preservando o resto do
+// histórico de cada um. Protegido por chave. GET /admin/limpar-copa?key=...
+app.get("/admin/limpar-copa", async (req, res) => {
+  if (req.query.key !== "audit-soul-2026-9fk3qz7wpx") return res.status(403).json({ erro: "negado" });
+  try {
+    const re = /copa|mundial|torcer pelo brasil|jogo do brasil|jogos da copa|final da copa|jogo da copa/i;
+    const ks = await redis.keys("memoria:*");
+    let conversasLimpas = 0, mensagensRemovidas = 0;
+    for (const k of ks) {
+      const v = await redis.get(k); let h;
+      try { h = JSON.parse(v); } catch (e) { continue; }
+      if (!Array.isArray(h)) continue;
+      const nv = h.filter(m => !(m && typeof m.content === "string" && re.test(m.content)));
+      if (nv.length !== h.length) {
+        mensagensRemovidas += h.length - nv.length;
+        conversasLimpas++;
+        await redis.set(k, JSON.stringify(nv));
+      }
+    }
+    res.json({ ok: true, totalConversas: ks.length, conversasLimpas, mensagensRemovidas });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
 });
