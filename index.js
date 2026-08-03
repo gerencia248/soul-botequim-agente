@@ -303,8 +303,8 @@ function resolverDiasSemana(texto) {
 function extrairQuantidadePessoas(texto) {
   if (!texto) return null;
   const t = texto.toLowerCase();
-  // Range "N a M pessoas" → pega o máximo
-  let m = t.match(/(\d+)\s*(?:a|ou|até|ate|-)\s*(\d+)\s*(?:pessoas?|convidados?|gente|pax)/);
+  // Range "N a M pessoas" → pega o máximo (separadores: a, ou, até, -, /, ~)
+  let m = t.match(/(\d+)\s*(?:a|ou|até|ate|-|\/|~)\s*(\d+)\s*(?:pessoas?|convidados?|gente|pax)/);
   if (m) return parseInt(m[2]);
   // "N pessoas/convidados/gente"
   m = t.match(/(\d+)\s*(?:pessoas?|convidados?|gente|pax)/);
@@ -313,6 +313,16 @@ function extrairQuantidadePessoas(texto) {
   m = t.match(/(?:por volta de|em torno de|cerca de|umas?|uns)\s*(\d+)/);
   if (m) return parseInt(m[1]);
   return null;
+}
+
+// ── QUANTIDADE DE GRUPO (para a TRAVA DOS 30) ─────────────────
+// Usada SÓ quando o valor já é a resposta do cliente à pergunta "quantas
+// pessoas?" (contexto controlado). Pega o MAIOR número do texto, então faixas
+// "soltas" como "15-20", "25/30", "20 a 30" viram 20/30/30 corretamente (o bug
+// antigo fazia replace(/\D/g,"") e transformava "15-20" em 1520).
+function qtdDeGrupo(valor) {
+  const nums = (String(valor || "").match(/\d+/g) || []).map(n => parseInt(n, 10));
+  return nums.length ? Math.max(...nums) : NaN;
 }
 
 // ── DETECTOR DE EVENTO (pessoal ou corporativo) ─────────────
@@ -414,7 +424,7 @@ async function avancarFluxoLeadDourado(telefone, respostaAtual) {
   // Assim que o cliente informa 30 pessoas ou MENOS, redireciona pro GetinApp
   // (mesmo que a conversa tenha começado como "evento"). Acima de 30 segue pro Dourado.
   {
-    const qtd = parseInt(String(fluxo.dados.pessoas || "").replace(/\D/g, ""), 10);
+    const qtd = qtdDeGrupo(fluxo.dados.pessoas);
     if (!isNaN(qtd) && qtd > 0 && qtd <= 30) {
       await apagarFluxo("lead", telefone);
       await enviarMensagem(telefone,
@@ -457,8 +467,17 @@ async function processarFluxoLeadDourado(telefone, mensagem) {
 }
 
 async function finalizarLeadDourado(telefone) {
-  const fluxo = await carregarFluxo("lead", telefone);
-  if (!fluxo) return;
+  // ── CLAIM ATÔMICO (anti-duplicata): GETDEL pega o fluxo E apaga numa única
+  // operação. Se duas mensagens do cliente chegarem quase juntas (ex.: "Nenhuma"
+  // e logo "Ok"), só UMA consegue o valor — a outra recebe null e sai aqui.
+  // Assim o handoff pro Dourado (e o aviso ao cliente) sai UMA vez só.
+  let raw = null;
+  try { raw = await redis.getdel("fluxo:lead:" + telefone); }
+  catch (e) { // fallback se o Redis não tiver GETDEL: get + del (janela mínima)
+    try { raw = await redis.get("fluxo:lead:" + telefone); await redis.del("fluxo:lead:" + telefone); } catch (e2) { raw = null; }
+  }
+  if (!raw) return; // outra chamada concorrente já finalizou este lead
+  let fluxo; try { fluxo = JSON.parse(raw); } catch (e) { return; }
   const d = fluxo.dados;
 
   // 1) Avisa cliente (+ aviso de lugar cativo, se ele pediu um lugar específico)
@@ -497,8 +516,7 @@ async function finalizarLeadDourado(telefone) {
     observacoesLead: d.observacoes,
   });
 
-  // 4) Limpa o fluxo
-  await apagarFluxo("lead", telefone);
+  // 4) Fluxo já foi apagado no CLAIM ATÔMICO (GETDEL) no início desta função.
 }
 
 // ── MEMÓRIA DE CONVERSAS ─────────────────────────────────────
@@ -818,8 +836,9 @@ function querEventoCorporativo(t) {
 }
 
 // Cliente quer um EVENTO COM PACOTE FECHADO (open bar, buffet, espaço exclusivo,
-// aluguel do espaço). Esses casos vão pro Dourado, independente do tamanho.
-// (Reserva de mesa comum NÃO cai aqui — vai pelo GetinApp normal.)
+// aluguel do espaço). Regra do dono: pacote fechado SÓ acima de 30 pessoas → vai
+// pro Dourado. Até 30, a trava dos 30 (redirecionarSePequeno/qtdDeGrupo) manda
+// pro GetinApp. (Reserva de mesa comum NÃO cai aqui — vai pelo GetinApp normal.)
 function mencionaPacoteFechado(t) {
   const txt = t.toLowerCase();
   return ["pacote fechado","pacote completo","pacote de evento","open bar","openbar","open-bar",
@@ -827,6 +846,22 @@ function mencionaPacoteFechado(t) {
     "fechar o espaço","fechar o espaco","fechar um espaço","fechar um espaco","alugar o espaço",
     "alugar o espaco","aluguel do espaço","aluguel do espaco","espaço só pra","espaco so pra",
     "espaço todo","espaco todo","fechar o bar","reservar o bar inteiro"].some(g => txt.includes(g));
+}
+
+// ── ITEM ESQUECIDO / ACHADOS E PERDIDOS → Dourado ────────────
+// Cliente esqueceu/perdeu um objeto/pertence no bar. Quem cuida de achados e
+// perdidos é o gerente Dourado. Cuidado com falsos positivos: "perdi a reserva",
+// "esqueci o horário/a senha", "perdi o jogo" NÃO são item físico.
+function mencionaObjetoEsquecido(t) {
+  const txt = String(t || "").toLowerCase();
+  if (/achados?\s+e\s+perdidos/.test(txt)) return true;
+  const acao = /\b(esqueci|esquecemos|deixei|deixamos|perdi|perdemos|larguei|caiu|sumiu)\b/.test(txt);
+  if (!acao) return false;
+  const objeto = /\b(carteira|celular|telefone|chave|chaves|[óo]culos|guarda[-\s]?chuva|sombrinha|casaco|blusa|jaqueta|agasalho|moletom|bolsa|mochila|anel|an[ée]is|rel[óo]gio|cart[ãa]o|cart[õo]es|documento|documentos|rg|cnh|fone|fones|pulseira|corrente|cord[ãa]o|colar|brinco|brincos|bon[ée]|garrafa|copo|caneca|pertence|pertences|objeto|carregador|power\s?bank|notebook|tablet|isqueiro|caderno)\b/.test(txt);
+  const local = /\b(no bar|na mesa|no banheiro|no local|no restaurante|no bal[cç][ãa]o|a[íi] no bar|com voc[êe]s)\b/.test(txt);
+  // barra falsos positivos claros quando NÃO há objeto físico citado
+  if (!objeto && /\b(reserva|hor[áa]rio|senha|link|o jogo|a vez|o time|a conta|pedido|dinheiro|tempo|a data|a promo)\b/.test(txt)) return false;
+  return objeto || local;
 }
 
 // Detecta menção a EVENTO/FESTA/comemoração — quando o bot ainda NÃO sabe se é
@@ -956,7 +991,7 @@ function avisoLugarCativo(observacoes) {
 // (sem mencionar o Dourado). Retorna true se redirecionou. Evita a mensagem
 // contraditória "é com o Dourado" seguida de "na verdade pra 30 não precisa".
 async function redirecionarSePequeno(telefone, dados) {
-  const qtd = parseInt(String((dados && dados.pessoas) || "").replace(/\D/g, ""), 10);
+  const qtd = qtdDeGrupo(dados && dados.pessoas);
   if (!isNaN(qtd) && qtd > 0 && qtd <= 30) {
     await enviarMensagem(telefone,
       "Que boa notícia: pra até 30 pessoas você já garante sua reserva na hora pelo nosso link, sem precisar esperar o Dourado! 😊\n\n" +
@@ -1263,6 +1298,7 @@ INFORMAÇÕES DO BAR:
 - *Cobrança, boletos, faturas, contas em atraso e assuntos financeiros*: direcione SEMPRE para a *Cris* (financeiro) no (11) 98881-0344. Isso vale para boleto, 2ª via, fatura, cobrança, vencimento e pagamento em atraso. ATENÇÃO: NÃO confunda com o cliente comum perguntando forma de pagamento do bar (cartão, PIX da retirada) nem com cliente dizendo que o PEDIDO dele atrasou — esses casos você mesma resolve, não manda pra Cris.
 - Instagram: @soulbotequim
 - ATENÇÃO: o telefone do bar e o WhatsApp do Dourado são DIFERENTES. Nunca confunda. Quando precisar passar contato do Dourado, use SEMPRE (11) 95465-7178.
+- ITEM ESQUECIDO / PERDIDO NO BAR (carteira, celular, chave, óculos, casaco, documento, etc. — "esqueci/deixei/perdi meu ... aí/no bar/na mesa/no banheiro"): quem cuida de *achados e perdidos* é o *Dourado*. Oriente o cliente a falar com ele no (11) 95465-7178 com a descrição e o dia. NÃO mande ligar no telefone geral do bar.
 - Pet friendly | Área externa | Acesso para cadeirantes | Wi-Fi | Banheiro adaptado para cadeirantes
 - Climatização: temos *aquecedores* para os dias frios. NÃO temos ar-condicionado, mas nosso ambiente é super fresco e arejado — fica gostoso o ano todo. Se perguntarem sobre ar-condicionado, diga isso com naturalidade e simpatia (sem ar-condicionado, porém ambiente fresquinho e aquecedores no frio).
 - Sem couvert | Taxa de rolha R$70 | Sem happy hour | Comanda individual
@@ -1330,10 +1366,11 @@ REGRA DO TAMANHO DO GRUPO (CRÍTICA — o limite é 30, siga à risca):
 - Eventos PESSOAIS (aniversário, casamento, formatura, despedida, chá de bebê/panela): a regra é a MESMA, SÓ por tamanho. Até 30 pessoas (inclusive) → GetinApp normalmente, mesmo sendo aniversário/comemoração. Só ACIMA de 30 pessoas → Dourado. NÃO mande evento pessoal pequeno (30 ou menos) pro Dourado.
 - "Happy hour", "encontro de amigos", "confraternização casual", grupo comum NÃO é evento pessoal — se for até 30, é GetinApp normal.
 - Na dúvida sobre o tamanho, se for 30 ou menos, use o GetinApp.
+- PACOTE FECHADO (open bar, buffet, espaço reservado só pra vocês) SÓ existe para grupos ACIMA de 30 pessoas. Até 30 pessoas, mesmo que peçam open bar/buffet/espaço reservado, NÃO oferecemos pacote fechado nem mandamos pro Dourado — é reserva de mesa normal pelo GetinApp.
 
 EVENTO: PACOTE FECHADO vs SÓ RESERVA (REGRA IMPORTANTE — SEGUIR À RISCA):
 - Quando o cliente falar de EVENTO, FESTA, CONFRATERNIZAÇÃO, evento da EMPRESA, comemoração maior, ou pedir algo tipo open bar/buffet/espaço reservado, você PRIMEIRO pergunta de forma simpática, em UMA frase: "Vai ser um evento com *pacote fechado* (open bar, buffet, espaço reservado só pra vocês) ou só uma *reserva de mesa*? 😊".
-- Se o cliente disser que é PACOTE FECHADO (open bar, buffet, espaço exclusivo, fechar o espaço, aluguel do espaço): esse caso é com o *Dourado* (gerente), INDEPENDENTE do tamanho. Passe o contato dele: (11) 95465-7178. Diga que ele monta o pacote ideal.
+- Se o cliente disser que é PACOTE FECHADO (open bar, buffet, espaço exclusivo, fechar o espaço, aluguel do espaço): só fechamos pacote para grupos ACIMA de 30 pessoas. Se for acima de 30, é com o *Dourado* (gerente): (11) 95465-7178, ele monta o pacote ideal. Se for 30 pessoas ou MENOS, a gente NÃO faz pacote fechado — nesse caso é reserva de mesa normal pelo GetinApp (https://widget.getinapp.com.br/d6NZKJ6V), e o cliente pode combinar open bar/buffet direto no local com a equipe.
 - Se o cliente disser que é SÓ RESERVA (mesa comum, sem pacote): trate como reserva normal e siga a REGRA DO TAMANHO — até 30 pessoas mande o link do GetinApp (https://widget.getinapp.com.br/d6NZKJ6V); acima de 30, aí sim é com o Dourado.
 - NÃO comece a perguntar nome da empresa, orçamento, etc. por conta própria — só faça a pergunta "pacote fechado ou só reserva?" e roteie conforme a resposta.
 
@@ -1589,6 +1626,19 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(CONFIG.NUMERO_CRIS,
           "💰 *Assunto financeiro / cobrança*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 250) + "\"");
       } catch (e) { console.error("Erro ao avisar Cris:", e.message); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // ── ITEM ESQUECIDO / ACHADOS E PERDIDOS → encaminha para o Dourado ──
+    if (!emFluxoAtivo && mencionaObjetoEsquecido(mensagem)) {
+      console.log("[ACHADOS-PERDIDOS] de " + telefone + " → Dourado");
+      await enviarMensagem(telefone,
+        "Poxa, que chato! 😕 Fica tranquilo(a) que quem cuida dos *achados e perdidos* aqui é o nosso gerente *Dourado*.\n\n" +
+        "Já estou avisando ele. Pode chamar direto no *(11) 95465-7178* contando o que era, o dia e uma descrição, que ele verifica pra você! 🙏");
+      try {
+        await enviarMensagem(CONFIG.NUMERO_DOURADO,
+          "🔎 *Achados e perdidos — cliente esqueceu algo no bar*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 250) + "\"\n\n_Cliente foi orientado a te chamar. Verifica pra ele, por favor._");
+      } catch (e) { console.error("Erro ao avisar Dourado (achados/perdidos):", e.message); }
       return res.status(200).json({ ok: true });
     }
 
