@@ -1569,35 +1569,34 @@ async function enviarMensagem(telefone, texto, opts = {}) {
 }
 
 // ── WEBHOOK ──────────────────────────────────────────────────
-app.post("/webhook", async (req, res) => {
-  try {
-    const body = req.body;
-    if (body.fromMe) return res.status(200).json({ ok: true });
-    if (body.isGroup) return res.status(200).json({ ok: true });
-    // Ignora CANAIS / NEWSLETTERS / BROADCAST / STATUS — não são clientes reais.
-    // (Ex.: "120363...@newsletter" estava virando lead-lixo e gastando IA à toa.)
-    if (body.isNewsletter || body.isBroadcast || body.broadcast ||
-        /@(newsletter|broadcast)|status@|@g\.us/i.test(String(body.phone || body.chatId || body.chatLid || ""))) {
-      return res.status(200).json({ ok: true });
+
+// ── DEBOUNCE / AGREGAÇÃO DE MENSAGENS EM RAJADA ──────────────
+// Cliente manda várias mensagens seguidas ("Marcos" + "obrigado"): junta tudo
+// numa janela curta e responde UMA vez só (evita respostas repetidas).
+const DEBOUNCE_MS = 3000;
+const _bufMsgs = {};
+const _bufTimers = {};
+function bufferAdd(telefone, mensagem) {
+  (_bufMsgs[telefone] = _bufMsgs[telefone] || []).push(mensagem);
+}
+function agendarProcessamento(telefone) {
+  if (_bufTimers[telefone]) clearTimeout(_bufTimers[telefone]);
+  _bufTimers[telefone] = setTimeout(async () => {
+    delete _bufTimers[telefone];
+    const msgs = _bufMsgs[telefone] || [];
+    delete _bufMsgs[telefone];
+    if (!msgs.length) return;
+    const textoAgregado = msgs.join("\n");
+    try {
+      await processarMensagem(telefone, textoAgregado);
+    } catch (e) {
+      console.error("[DEBOUNCE] erro ao processar " + telefone + ": " + e.message);
+      try { await enviarMensagem(telefone, "Desculpe, tive um problema técnico. Por favor, tente novamente ou ligue: (11) 95498-7240."); } catch (_) {}
     }
-    if (body.type && body.type !== "ReceivedCallback") return res.status(200).json({ ok: true });
+  }, DEBOUNCE_MS);
+}
 
-    const msgId = body.messageId || body.id;
-    if (await jaProcessou(msgId)) { console.log("[DUPLICADA] " + msgId); return res.status(200).json({ ok: true }); }
-
-    const telefone = body.phone;
-
-    // ── ÁUDIO: o bot ainda não transcreve. Em vez de ignorar, pede texto. ──
-    if (telefone && body.audio && !(body.text && body.text.message)) {
-      console.log("[AUDIO] de " + telefone + " — pedindo para mandar por texto");
-      try { await enviarMensagem(telefone, "Oi! 😊 Por aqui ainda não consigo ouvir áudios. Pode me mandar sua mensagem por *texto*? Aí te ajudo rapidinho!"); } catch (e) {}
-      return res.status(200).json({ ok: true });
-    }
-
-    const mensagem = body.text && body.text.message ? body.text.message : body.text;
-    if (!telefone || !mensagem || typeof mensagem !== "string" || mensagem.trim() === "") return res.status(200).json({ ok: true });
-
-    console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] De " + telefone + ": " + mensagem);
+async function processarMensagem(telefone, mensagem) {
 
     // Se o cliente está NO MEIO de um fluxo (coleta de evento, lead do Dourado
     // ou aguardando "pacote ou reserva?"), a resposta dele pertence ao fluxo —
@@ -1615,7 +1614,7 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(CONFIG.NUMERO_ITALO,
           "📦 *Fornecedor/Entregador entrou em contato*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 200) + "\"");
       } catch (e) { console.error("Erro ao avisar Ítalo:", e.message); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── COBRANÇA / BOLETO / ATRASO → encaminha para a Cris (financeiro) ──
@@ -1626,7 +1625,7 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(CONFIG.NUMERO_CRIS,
           "💰 *Assunto financeiro / cobrança*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 250) + "\"");
       } catch (e) { console.error("Erro ao avisar Cris:", e.message); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── ITEM ESQUECIDO / ACHADOS E PERDIDOS → encaminha para o Dourado ──
@@ -1639,11 +1638,11 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(CONFIG.NUMERO_DOURADO,
           "🔎 *Achados e perdidos — cliente esqueceu algo no bar*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 250) + "\"\n\n_Cliente foi orientado a te chamar. Verifica pra ele, por favor._");
       } catch (e) { console.error("Erro ao avisar Dourado (achados/perdidos):", e.message); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
-    if (await estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return res.status(200).json({ ok: true }); }
-    if (await estaNoFluxoLeadDourado(telefone)) { await processarFluxoLeadDourado(telefone, mensagem); return res.status(200).json({ ok: true }); }
+    if (await estaNoFluxoEvento(telefone)) { await processarFluxoEvento(telefone, mensagem); return; }
+    if (await estaNoFluxoLeadDourado(telefone)) { await processarFluxoLeadDourado(telefone, mensagem); return; }
 
     // ── RESPOSTA À PERGUNTA "PACOTE FECHADO ou SÓ RESERVA?" ──
     // Se o bot perguntou e está esperando a resposta:
@@ -1655,13 +1654,13 @@ app.post("/webhook", async (req, res) => {
         const f = await carregarFluxo("perguntapacote", telefone);
         await apagarFluxo("perguntapacote", telefone);
         // Se já sabemos que é ATÉ 30 pessoas, vai direto pro GetinApp (sem falar do Dourado).
-        if (await redirecionarSePequeno(telefone, f && f.dados)) return res.status(200).json({ ok: true });
+        if (await redirecionarSePequeno(telefone, f && f.dados)) return;
         await enviarMensagem(telefone,
           "Perfeito! Evento com pacote fechado é com o nosso gerente *Dourado*. 🍻\n\n" +
           "Deixa eu anotar uns detalhes rapidinho pra ele já te chamar com tudo na mão!");
         await iniciarFluxoLeadDourado(telefone, (f && f.dados) || {});
         console.log("[PACOTE-FECHADO] Lead iniciado para Dourado | cliente: " + telefone);
-        return res.status(200).json({ ok: true });
+        return;
       }
       if (respostaSoReserva(mensagem)) {
         const fReserva = await carregarFluxo("perguntapacote", telefone);
@@ -1670,7 +1669,7 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(telefone,
           "Show! Então é só a reserva de mesa. 😊 Garante a sua por aqui: https://widget.getinapp.com.br/d6NZKJ6V\n\n" +
           "Me avisa quando confirmar, beleza?" + avisoLugarCativo(obsReserva), { fracionar: false });
-        return res.status(200).json({ ok: true });
+        return;
       }
       // não entendeu a resposta → limpa a espera e segue o fluxo normal
       await apagarFluxo("perguntapacote", telefone);
@@ -1684,21 +1683,21 @@ app.post("/webhook", async (req, res) => {
       const saud = horaSP < 12 ? "Bom dia" : (horaSP < 18 ? "Boa tarde" : "Boa noite");
       await enviarMensagem(telefone,
         saud + "! Tudo bem? 😊 Seja muito bem-vindo(a) ao *Soul Botequim*! Como posso te ajudar hoje? 🍻");
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── PEDIDO DE CHOPP/DRINK GRÁTIS → esclarece que a cortesia é só do aniversariante ──
     if (pedeBebidaGratis(mensagem)) {
       await enviarMensagem(telefone,
         "Que animação! 🍻 Só um detalhe importante: a cortesia de *chopp/drink grátis* aqui é exclusiva pro *aniversariante do dia* 🎂 — não vale pra todos os convidados. O resto da galera consome normalmente do cardápio, combinado? 😊\n\nPosso te ajudar com a reserva ou o cardápio?");
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── CLIENTE NÃO CONSEGUIU RESERVAR PELO GETIN → convite pra vir ao bar ──
     if (naoConseguiuReservar(mensagem)) {
       console.log("[RESERVA-FALHOU] " + telefone + " — enviando convite pra vir ao bar");
       await enviarMensagem(telefone, MSG_RESERVA_FALHOU, { fracionar: false });
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── GRUPO GRANDE (acima de 30) OU PACOTE FECHADO → encaminha pro Dourado ──
@@ -1727,7 +1726,7 @@ app.post("/webhook", async (req, res) => {
 
           // Se já é ATÉ 30 pessoas (ex.: "open bar para 20"), manda direto pro
           // GetinApp sem mencionar o Dourado (evita mensagem contraditória).
-          if (await redirecionarSePequeno(telefone, dadosIniciais)) return res.status(200).json({ ok: true });
+          if (await redirecionarSePequeno(telefone, dadosIniciais)) return;
 
           // 1) Avisa o cliente que vai coletar info pro Dourado
           const motivoDourado = pacoteFechado
@@ -1745,7 +1744,7 @@ app.post("/webhook", async (req, res) => {
           await iniciarFluxoLeadDourado(telefone, dadosIniciais);
 
           console.log("[FLUXO-LEAD] Iniciado para " + telefone + " com pre-dados: " + JSON.stringify(dadosIniciais));
-          return res.status(200).json({ ok: true });
+          return;
         }
       }
     }
@@ -1763,13 +1762,13 @@ app.post("/webhook", async (req, res) => {
           "Que legal que pensou no Soul pro seu evento! 🎉 Só pra te direcionar certinho: vai ser um evento com *pacote fechado* (open bar, buffet, espaço reservado só pra vocês) ou só uma *reserva de mesa*?",
           { fracionar: false });
         console.log("[PERGUNTA-PACOTE] Perguntado para " + telefone);
-        return res.status(200).json({ ok: true });
+        return;
       }
     }
 
     if (contemPalavroes(mensagem)) {
       await enviarMensagem(telefone, "Por favor, vamos manter a conversa respeitosa. Estou aqui para ajudar com cardápio, reservas ou qualquer dúvida sobre o Soul Botequim.");
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     if (querFalarComHumano(mensagem)) {
@@ -1778,11 +1777,11 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(telefone, "Claro! Para assuntos de *cobrança e financeiro*, quem te atende é a *Cris* no (11) 98881-0344. Já avisei ela por aqui também! 😊");
         await enviarMensagem(CONFIG.NUMERO_CRIS, "💰 *Contato quer falar sobre financeiro*\n📱 " + telefone + "\n💬 \"" + String(mensagem).substring(0, 250) + "\"");
         console.log("[HUMANO/FINANCEIRO] " + telefone + " → Cris");
-        return res.status(200).json({ ok: true });
+        return;
       }
       await enviarMensagem(telefone, "Claro! Vou acionar o Dourado para te atender pessoalmente. Um momento!");
       await enviarMensagem(CONFIG.NUMERO_DOURADO, "🔔 *Luz — Atendimento Humano*\n\nCliente " + telefone + " quer falar com atendente.\nMensagem: \"" + mensagem + "\"");
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // NOTA: o antigo fluxo corporativo rígido (perguntava empresa/orçamento) foi
@@ -1804,7 +1803,7 @@ app.post("/webhook", async (req, res) => {
         ? `Sim, estamos *ABERTOS* agora! 😊\n\nHoje é ${dataAtual} e funcionamos até às ${s.fechaAs}.\n\nVem pro Soul! Reserve: https://widget.getinapp.com.br/d6NZKJ6V`
         : `Agora estamos *FECHADOS*. 😔\n\nHoje é ${dataAtual}. Próxima abertura: ${s.proximaAbertura}.\n\nJá reserve sua mesa: https://widget.getinapp.com.br/d6NZKJ6V`;
       await enviarMensagem(telefone, resp);
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── CARDÁPIOS COMPLETOS ──
@@ -1830,7 +1829,7 @@ app.post("/webhook", async (req, res) => {
         await enviarMensagem(telefone, CARDAPIO_VINHOS, inteiro);
         await enviarMensagem(telefone, CARDAPIO_COMIDAS, inteiro);
       }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     if (querVeganoVegetariano(mensagem)) {
@@ -1840,14 +1839,14 @@ app.post("/webhook", async (req, res) => {
       } else {
         await enviarMensagem(telefone, OPCOES_VEGETARIANAS, { fracionar: false });
       }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // Recomendação de DRINK (pergunta a preferência). Só quando NÃO fala de comida —
     // sugestão de comida vai pro Claude conversar com base nas recomendações do prompt.
     if (querRecomendacaoDrink(mensagem) && !falaDeComida(mensagem)) {
       await enviarMensagem(telefone, "Com prazer! Vou te ajudar a escolher o drink ideal.\n\nVocê prefere algo *refrescante*, *forte*, *clássico*, *tropical/brasileiro* ou algo *diferente e autoral*?");
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── CONFIRMAÇÃO DE RESERVA (atualiza lead pendente) ──
@@ -1863,7 +1862,7 @@ app.post("/webhook", async (req, res) => {
           "\n👥 " + (lead.pessoas || "?") + " pessoas" +
           "\n📅 " + (lead.dia || "?")
         );
-        return res.status(200).json({ ok: true });
+        return;
       }
       // sem lead pendente: deixa o Claude responder normal
     }
@@ -1910,7 +1909,43 @@ app.post("/webhook", async (req, res) => {
       } catch (e) { console.error("[LEAD] Erro ao capturar:", e.message); }
     }
 
+}
+
+app.post("/webhook", async (req, res) => {
+  try {
+    const body = req.body;
+    if (body.fromMe) return res.status(200).json({ ok: true });
+    if (body.isGroup) return res.status(200).json({ ok: true });
+    // Ignora CANAIS / NEWSLETTERS / BROADCAST / STATUS — não são clientes reais.
+    // (Ex.: "120363...@newsletter" estava virando lead-lixo e gastando IA à toa.)
+    if (body.isNewsletter || body.isBroadcast || body.broadcast ||
+        /@(newsletter|broadcast)|status@|@g\.us/i.test(String(body.phone || body.chatId || body.chatLid || ""))) {
+      return res.status(200).json({ ok: true });
+    }
+    if (body.type && body.type !== "ReceivedCallback") return res.status(200).json({ ok: true });
+
+    const msgId = body.messageId || body.id;
+    if (await jaProcessou(msgId)) { console.log("[DUPLICADA] " + msgId); return res.status(200).json({ ok: true }); }
+
+    const telefone = body.phone;
+
+    // ── ÁUDIO: o bot ainda não transcreve. Em vez de ignorar, pede texto. ──
+    if (telefone && body.audio && !(body.text && body.text.message)) {
+      console.log("[AUDIO] de " + telefone + " — pedindo para mandar por texto");
+      try { await enviarMensagem(telefone, "Oi! 😊 Por aqui ainda não consigo ouvir áudios. Pode me mandar sua mensagem por *texto*? Aí te ajudo rapidinho!"); } catch (e) {}
+      return res.status(200).json({ ok: true });
+    }
+
+    const mensagem = body.text && body.text.message ? body.text.message : body.text;
+    if (!telefone || !mensagem || typeof mensagem !== "string" || mensagem.trim() === "") return res.status(200).json({ ok: true });
+
+    console.log("[" + new Date().toLocaleTimeString("pt-BR") + "] De " + telefone + ": " + mensagem);
+
+    // ── DEBOUNCE: junta mensagens em rajada e responde UMA vez só ──
+    bufferAdd(telefone, mensagem);
     res.status(200).json({ ok: true });
+    agendarProcessamento(telefone);
+    return;
 
   } catch (error) {
     console.error("Erro no webhook:", error.response && error.response.data ? error.response.data : error.message);
