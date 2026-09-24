@@ -1553,9 +1553,11 @@ function dividirEmMensagens(texto) {
 // ── ENVIAR MENSAGEM ──────────────────────────────────────────
 async function enviarMensagem(telefone, texto, opts = {}) {
   const textoFinal = sanitizarParaWhatsApp(texto);
-  // Conteúdos estruturados (cardápios, listas) devem ir INTEIROS numa única
-  // mensagem: passe { fracionar: false }. O resto é fracionado normalmente.
-  const partes = opts.fracionar === false ? [textoFinal] : dividirEmMensagens(textoFinal);
+  // PADRÃO: mensagem vai INTEIRA (comportamento anterior a 15/06/2026).
+  // O envio fracionado quebrava em CADA quebra de linha, então qualquer resposta
+  // com lista (cardápio, preços, opções) virava dezenas de mensagens soltas.
+  // Para fracionar de propósito, passe { fracionar: true }.
+  const partes = opts.fracionar === true ? dividirEmMensagens(textoFinal) : [textoFinal];
   const url = "https://api.z-api.io/instances/" + CONFIG.ZAPI_INSTANCE_ID + "/token/" + CONFIG.ZAPI_TOKEN + "/send-text";
   for (let i = 0; i < partes.length; i++) {
     // delayMessage: segundos que o WhatsApp mostra "digitando..." antes de enviar (mais humano).
