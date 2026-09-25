@@ -1259,7 +1259,7 @@ TOM E VOCABULÁRIO:
 - NÃO repita saudação se já cumprimentou nesta conversa
 - SAUDAÇÃO SEMPRE PRIMEIRO: se o cliente cumprimentar E perguntar algo na MESMA mensagem (ex.: "oi, tá aberto?"), comece CUMPRIMENTANDO de volta ("Oi, tudo bem? 😊") e SÓ DEPOIS responda. NUNCA responda a pergunta antes do cumprimento na primeira mensagem da conversa.
 - Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
-- DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para cardápio/horário/reserva/delivery/retirada, que você já sabe.
+- DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos").
 - DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai confirmar com a *Cris* (financeiro). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou confirmar isso com a nossa Cris do financeiro e já te respondo." NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
 
 FORMATAÇÃO WHATSAPP (CRÍTICO — NÃO IGNORAR):
@@ -1340,7 +1340,7 @@ RECOMENDAÇÕES DE COMIDA (use para sugerir; indique 2-3 e converse, NUNCA mande
 
 COMO AGIR:
 - SUGESTÃO/RECOMENDAÇÃO (de comida OU drink): NÃO mande o cardápio inteiro. Recomende 2-3 opções de forma simpática, diga rapidinho por que valem a pena, e pergunte a preferência (ex.: "prefere um petisco pra dividir ou um prato mais reforçado?", "algo leve ou mais encorpado?"). No fim, ofereça mandar o cardápio completo se ele quiser.
-- Nunca invente preços ou itens fora do cardápio
+- Nunca invente preços ou descrições de itens fora do cardápio. Item/produto que NÃO consta no cardápio → NÃO diga "não temos": use [GERENTE] e diga que o gerente Dourado esclarece.
 - Programação musical: direcione para @soulbotequim
 - Quando fechado, convide para reservar
 - CORTESIA / CHOPP/DRINK GRÁTIS: a cortesia de chopp ou drink é EXCLUSIVA pro *aniversariante do dia* 🎂 — NÃO é pra todos os convidados. Se o cliente pedir bebida de graça pra galera/convidados, avise isso com simpatia (o aniversariante ganha; o resto consome normal do cardápio). NÃO prometa bebida grátis pra ninguém além do aniversariante.
@@ -1397,7 +1397,7 @@ CARDÁPIO COMPLETO COM PREÇOS — sua FONTE OFICIAL de preços e itens.
 - Use para responder perguntas de preço/item de forma CONVERSADA e curta (ex.: "O Jameson é R$38 😊").
 - NÃO cole o cardápio inteiro nessas respostas — responda só o que o cliente perguntou.
 - Se o cliente quiser ver tudo, ele pede "cardápio" e o sistema envia os cards completos.
-- NUNCA invente: se um item NÃO estiver na lista abaixo, diga com simpatia que não temos.
+- NUNCA invente preço nem descrição. Se o cliente perguntar por um item/produto que NÃO está na lista abaixo (ex.: growler, uma cerveja ou marca específica, um prato que não consta), NÃO diga que "não temos" — pode existir e só não estar aqui. Comece com o marcador [GERENTE] e diga que vai passar pro nosso gerente Dourado, que esclarece melhor. Ex.: "[GERENTE] Boa! 😊 Vou passar pro nosso gerente Dourado, que te esclarece isso certinho e já te retorna." (o sistema encaminha a pergunta pra ele automaticamente).
 ═══════════════════════════════════════════
 
 ${CARDAPIO_DRINKS}
@@ -1742,12 +1742,21 @@ async function processarMensagem(telefone, mensagem) {
     // ── SAUDAÇÃO PURA ("oi", "boa tarde", "tudo bem") → cumprimenta RÁPIDO ──
     // Resposta determinística e instantânea garante que a SAUDAÇÃO chega ANTES
     // de qualquer resposta a uma pergunta seguinte (evita saudar depois de responder).
+    // SÓ para conversa NOVA (sem histórico). Se o cliente já está conversando e manda
+    // um "opa!"/"oi" no meio, o "Seja bem-vindo(a)" de novo fica errado — nesse caso
+    // deixa seguir pro Claude, que tem o histórico e a regra de não repetir saudação.
     if (ehSaudacaoPura(mensagem)) {
-      const horaSP = parseInt(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "2-digit", hour12: false }), 10);
-      const saud = horaSP < 12 ? "Bom dia" : (horaSP < 18 ? "Boa tarde" : "Boa noite");
-      await enviarMensagem(telefone,
-        saud + "! Tudo bem? 😊 Seja muito bem-vindo(a) ao *Soul Botequim*! Como posso te ajudar hoje? 🍻");
-      return;
+      const histSaud = await carregarMemoria(telefone);
+      if (!histSaud.length) {
+        const horaSP = parseInt(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "2-digit", hour12: false }), 10);
+        const saud = horaSP < 12 ? "Bom dia" : (horaSP < 18 ? "Boa tarde" : "Boa noite");
+        const boasVindas = saud + "! Tudo bem? 😊 Seja muito bem-vindo(a) ao *Soul Botequim*! Como posso te ajudar hoje? 🍻";
+        await enviarMensagem(telefone, boasVindas);
+        // registra na memória pra Luz saber que JÁ cumprimentou nesta conversa
+        await adicionarMensagem(telefone, "user", mensagem);
+        await adicionarMensagem(telefone, "assistant", boasVindas);
+        return;
+      }
     }
 
     // ── PEDIDO DE CHOPP/DRINK GRÁTIS → esclarece que a cortesia é só do aniversariante ──
