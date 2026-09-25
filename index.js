@@ -1571,6 +1571,67 @@ async function enviarMensagem(telefone, texto, opts = {}) {
   }
 }
 
+// Reenvia uma imagem (ex.: comprovante de PIX do cliente) para outro número.
+// Usa o send-image da Z-API com a URL que o próprio webhook entregou.
+async function enviarImagem(telefone, imageUrl, caption) {
+  const url = "https://api.z-api.io/instances/" + CONFIG.ZAPI_INSTANCE_ID + "/token/" + CONFIG.ZAPI_TOKEN + "/send-image";
+  await axios.post(url, { phone: telefone, image: imageUrl, caption: caption || "" },
+    { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } });
+}
+
+// ── ANEXOS (imagem / documento / vídeo) ──────────────────────
+// O bot não "lê" anexos. Antes, uma foto (quase sempre o COMPROVANTE DE PIX de
+// um pedido pra retirada) era descartada em silêncio pelo webhook, e a Luz
+// respondia "não recebi nenhuma imagem" — errado, o anexo chegou no WhatsApp.
+// Agora: (1) avisa o cliente que recebeu; (2) registra na memória pra Luz saber;
+// (3) repassa o anexo + contexto do pedido pro Dourado preparar.
+function extrairAnexo(body) {
+  if (body.image)    return { tipo: "imagem",    url: body.image.imageUrl || body.image.url || "",       caption: body.image.caption || "" };
+  if (body.document) return { tipo: "documento", url: body.document.documentUrl || body.document.url || "", caption: body.document.caption || body.document.fileName || "" };
+  if (body.video)    return { tipo: "vídeo",     url: body.video.videoUrl || body.video.url || "",       caption: body.video.caption || "" };
+  return null;
+}
+
+async function tratarAnexo(telefone, anexo) {
+  console.log("[ANEXO] " + anexo.tipo + " de " + telefone + (anexo.caption ? " | legenda: " + anexo.caption : ""));
+
+  // 1) Cliente: confirma que chegou (em vez de sumir).
+  await enviarMensagem(telefone,
+    "Recebi seu " + (anexo.tipo === "imagem" ? "comprovante" : anexo.tipo) + " por aqui! 📎 Já passei pro *Dourado* confirmar e preparar seu pedido. Assim que estiver pronto, ele te avisa, tá? Obrigada!",
+    { fracionar: false });
+
+  // 2) Memória: a Luz precisa saber que o anexo existiu, senão na próxima
+  //    mensagem de texto ela volta a dizer que "não recebeu nada".
+  const nota = "[cliente enviou um anexo: " + anexo.tipo + (anexo.caption ? " — \"" + anexo.caption + "\"" : "") + "]";
+  await adicionarMensagem(telefone, "user", nota);
+  await adicionarMensagem(telefone, "assistant", "Recebi seu " + anexo.tipo + "! Já passei pro Dourado confirmar e preparar o pedido.");
+
+  // 3) Dourado: anexo + últimas mensagens da conversa (pra ele ver o que foi pedido).
+  const hist = await carregarMemoria(telefone);
+  const ultimas = hist.slice(-8, -2)
+    .filter(m => m && typeof m.content === "string")
+    .map(m => (m.role === "user" ? "Cliente: " : "Luz: ") + m.content.replace(/\s+/g, " ").substring(0, 160))
+    .join("\n");
+  const aviso =
+    "📎 *COMPROVANTE / ANEXO RECEBIDO — pedido pra retirada*\n\n" +
+    "📱 Cliente: " + telefone + "\n" +
+    "🗂️ Tipo: " + anexo.tipo + (anexo.caption ? "\n📝 Legenda: " + anexo.caption : "") + "\n\n" +
+    (ultimas ? "💬 Últimas mensagens:\n" + ultimas + "\n\n" : "") +
+    "👉 Confere o pagamento e, se estiver ok, *prepara o pedido* e avisa o cliente.";
+  try {
+    if (anexo.tipo === "imagem" && anexo.url) {
+      await enviarImagem(CONFIG.NUMERO_DOURADO, anexo.url, aviso);
+    } else {
+      await enviarMensagem(CONFIG.NUMERO_DOURADO, aviso + (anexo.url ? "\n\n🔗 Arquivo: " + anexo.url : ""), { fracionar: false });
+    }
+    console.log("[DOURADO ✓] Anexo de " + telefone + " repassado");
+  } catch (e) {
+    console.error("[DOURADO ✗] Falha ao repassar anexo de " + telefone + ": " + e.message);
+    // Fallback: pelo menos o aviso em texto com o link.
+    try { await enviarMensagem(CONFIG.NUMERO_DOURADO, aviso + (anexo.url ? "\n\n🔗 Arquivo: " + anexo.url : ""), { fracionar: false }); } catch (e2) {}
+  }
+}
+
 // ── WEBHOOK ──────────────────────────────────────────────────
 
 // ── DEBOUNCE / AGREGAÇÃO DE MENSAGENS EM RAJADA ──────────────
@@ -1937,6 +1998,14 @@ app.post("/webhook", async (req, res) => {
       console.log("[AUDIO] de " + telefone + " — pedindo para mandar por texto");
       try { await enviarMensagem(telefone, "Oi! 😊 Por aqui ainda não consigo ouvir áudios. Pode me mandar sua mensagem por *texto*? Aí te ajudo rapidinho!"); } catch (e) {}
       return res.status(200).json({ ok: true });
+    }
+
+    // ── IMAGEM / DOCUMENTO / VÍDEO (ex.: comprovante de PIX): confirma, registra e repassa pro Dourado. ──
+    const anexo = extrairAnexo(body);
+    if (telefone && anexo && !(body.text && body.text.message)) {
+      res.status(200).json({ ok: true }); // ack rápido pra Z-API; o repasse segue em background
+      tratarAnexo(telefone, anexo).catch(e => console.error("[ANEXO] erro:", e.message));
+      return;
     }
 
     const mensagem = body.text && body.text.message ? body.text.message : body.text;
