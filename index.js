@@ -1476,8 +1476,13 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
     const response = await axios.post(
       "https://api.anthropic.com/v1/messages",
       {
-        model: "claude-sonnet-4-6",
-        max_tokens: 1024,
+        // Sonnet 5.5: geração atual, mais capaz e ~33% mais barato que o 4.6.
+        model: "claude-sonnet-5-5",
+        // Respostas agora vão inteiras (sem fracionar) -> folga pra listas longas.
+        max_tokens: 2000,
+        // O 5.5 raciocina por padrão em esforço alto; conversa de bar pede
+        // resposta rápida e barata -> esforço baixo.
+        output_config: { effort: "low" },
         // Cache do prompt (cardápio + regras são fixos): a 1ª msg da conversa
         // "escreve" o cache e as seguintes (em ate 5 min) leem por ~10% do custo.
         system: [{ type: "text", text: getSYSTEM_PROMPT(), cache_control: { type: "ephemeral" } }],
