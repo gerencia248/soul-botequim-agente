@@ -16,6 +16,13 @@ const CONFIG = {
   ZAPI_TOKEN: process.env.ZAPI_TOKEN,
   ZAPI_CLIENT_TOKEN: process.env.ZAPI_CLIENT_TOKEN,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  // Transcrição de áudio (mensagens de voz). Qualquer API compatível com o
+  // formato Whisper da OpenAI: STT_BASE_URL padrão https://api.openai.com/v1
+  // (Groq: https://api.groq.com/openai/v1 + STT_MODEL=whisper-large-v3).
+  // Sem STT_API_KEY, o bot volta a pedir "manda por texto" (comportamento antigo).
+  STT_API_KEY: process.env.STT_API_KEY || null,
+  STT_BASE_URL: (process.env.STT_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, ""),
+  STT_MODEL: process.env.STT_MODEL || "whisper-1",
   PORT: process.env.PORT || 3000,
   NUMERO_DOURADO: "5511954657178",
   NUMERO_ITALO: "5511953580917", // fornecedores e entregadores
@@ -1259,6 +1266,7 @@ TOM E VOCABULÁRIO:
 - NÃO repita saudação se já cumprimentou nesta conversa
 - SAUDAÇÃO SEMPRE PRIMEIRO: se o cliente cumprimentar E perguntar algo na MESMA mensagem (ex.: "oi, tá aberto?"), comece CUMPRIMENTANDO de volta ("Oi, tudo bem? 😊") e SÓ DEPOIS responda. NUNCA responda a pergunta antes do cumprimento na primeira mensagem da conversa.
 - RESPONDA TODAS AS PERGUNTAS: se o cliente fizer mais de uma pergunta (na mesma mensagem ou em mensagens seguidas que chegaram juntas), responda TODAS — nunca ignore nenhuma. Ex.: "posso só chegar hoje? e que horas tem música?" → responda sobre chegar/reserva E sobre a música (programação é no Instagram @soulbotequim). Se não souber UMA delas, use [GERENTE] pra essa e responda as outras normalmente — nunca deixe uma pergunta sem resposta.
+- FOTO DO CLIENTE: se a mensagem começar com [FOTO], é a descrição de uma imagem que o cliente mandou (o sistema já "olhou" a foto por você). Responda ao conteúdo com naturalidade — prato: diga se temos algo parecido no cardápio e sugira; print ou dúvida: responda a dúvida. NUNCA repita o marcador [FOTO] e NUNCA diga que "recebeu uma descrição".
 - Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
 - DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. O marcador vai SEMPRE na PRIMEIRA posição da resposta, e a resposta inteira é dirigida ao CLIENTE. NUNCA escreva um recado/pergunta para o gerente dentro da resposta (ex.: "Oi! Cliente perguntou se... pode confirmar?") — o cliente veria isso. O sistema já encaminha a pergunta do cliente ao gerente automaticamente. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva NOVA/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos"). EXCEÇÃO: alterar/remarcar uma reserva JÁ EXISTENTE (mudar dia, horário ou número de pessoas de uma reserva que o cliente já fez) NÃO é self-service pelo link do GetinApp — nesse caso use [GERENTE] e diga que vai confirmar a alteração com o gerente, em vez de só prometer e não encaminhar de verdade.
 - DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai confirmar com a *Cris* (financeiro). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou confirmar isso com a nossa Cris do financeiro e já te respondo." NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
@@ -1611,6 +1619,62 @@ async function enviarImagem(telefone, imageUrl, caption) {
 // respondia "não recebi nenhuma imagem" — errado, o anexo chegou no WhatsApp.
 // Agora: (1) avisa o cliente que recebeu; (2) registra na memória pra Luz saber;
 // (3) repassa o anexo + contexto do pedido pro Dourado preparar.
+// ── MÍDIA: download, transcrição de áudio e leitura de imagem ─────────────
+async function baixarBinario(url) {
+  const r = await axios.get(url, { responseType: "arraybuffer", timeout: 30000, maxContentLength: 25 * 1024 * 1024 });
+  return { buffer: Buffer.from(r.data), contentType: String(r.headers["content-type"] || "").split(";")[0].trim() };
+}
+
+// Áudio (voz) → texto. Usa API compatível com Whisper (ver CONFIG.STT_*).
+// Retorna null quando não há chave configurada ou a transcrição vier vazia.
+async function transcreverAudio(url) {
+  if (!CONFIG.STT_API_KEY || !url) return null;
+  const { buffer, contentType } = await baixarBinario(url);
+  const ct = contentType || "audio/ogg";
+  const ext = /mpeg|mp3/.test(ct) ? "mp3" : /mp4|m4a|aac/.test(ct) ? "m4a" : /wav/.test(ct) ? "wav" : /webm/.test(ct) ? "webm" : "ogg";
+  const form = new FormData();
+  form.append("file", new Blob([buffer], { type: ct }), "audio." + ext);
+  form.append("model", CONFIG.STT_MODEL);
+  form.append("language", "pt");
+  const r = await fetch(CONFIG.STT_BASE_URL + "/audio/transcriptions", {
+    method: "POST", headers: { Authorization: "Bearer " + CONFIG.STT_API_KEY }, body: form,
+    signal: AbortSignal.timeout(45000)
+  });
+  if (!r.ok) throw new Error("STT HTTP " + r.status + ": " + (await r.text()).substring(0, 200));
+  const j = await r.json();
+  const texto = String(j.text || "").trim();
+  return texto || null;
+}
+
+// Imagem → o que é (comprovante de PIX? prato? print?) + dados úteis.
+// Retorna { tipo, valor, data, pagador, banco, descricao } ou null se não conseguir ler.
+async function analisarImagem(url, legenda) {
+  if (!url) return null;
+  const { buffer, contentType } = await baixarBinario(url);
+  const mediaType = /png/.test(contentType) ? "image/png" : /webp/.test(contentType) ? "image/webp" : /gif/.test(contentType) ? "image/gif" : "image/jpeg";
+  const instrucao =
+    "Você analisa uma imagem enviada por um cliente ao WhatsApp de um bar (Soul Botequim). " +
+    "Responda SOMENTE um JSON, sem texto fora dele, no formato: " +
+    '{"tipo":"comprovante"|"prato_ou_cardapio"|"print_conversa_ou_reserva"|"outro",' +
+    '"valor":"R$ 0,00 ou null","data":"dd/mm/aaaa hh:mm ou null","pagador":"nome ou null","banco":"nome ou null",' +
+    '"descricao":"uma frase curta, em português, dizendo o que aparece na imagem"}. ' +
+    '"comprovante" = comprovante de PIX/transferência/pagamento. Se não for comprovante, valor/data/pagador/banco = null.' +
+    (legenda ? ' Legenda enviada junto: "' + String(legenda).substring(0, 200) + '".' : "");
+  const r = await axios.post("https://api.anthropic.com/v1/messages", {
+    model: "claude-sonnet-5-5", max_tokens: 400, output_config: { effort: "low" },
+    messages: [{ role: "user", content: [
+      { type: "image", source: { type: "base64", media_type: mediaType, data: buffer.toString("base64") } },
+      { type: "text", text: instrucao }
+    ] }]
+  }, { headers: { "x-api-key": CONFIG.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 45000 });
+  const texto = (r.data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+  const m = texto.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  const j = JSON.parse(m[0]);
+  const limpa = v => (v === null || v === undefined || String(v).trim().toLowerCase() === "null" || String(v).trim() === "") ? null : String(v).trim();
+  return { tipo: limpa(j.tipo) || "outro", valor: limpa(j.valor), data: limpa(j.data), pagador: limpa(j.pagador), banco: limpa(j.banco), descricao: limpa(j.descricao) };
+}
+
 function extrairAnexo(body) {
   if (body.image)    return { tipo: "imagem",    url: body.image.imageUrl || body.image.url || "",       caption: body.image.caption || "" };
   if (body.document) return { tipo: "documento", url: body.document.documentUrl || body.document.url || "", caption: body.document.caption || body.document.fileName || "" };
@@ -1621,14 +1685,40 @@ function extrairAnexo(body) {
 async function tratarAnexo(telefone, anexo) {
   console.log("[ANEXO] " + anexo.tipo + " de " + telefone + (anexo.caption ? " | legenda: " + anexo.caption : ""));
 
-  // 1) Cliente: confirma que chegou (em vez de sumir).
+  // 0) IMAGEM: a Luz "olha" a foto antes de decidir o que fazer com ela.
+  let leitura = null;
+  if (anexo.tipo === "imagem" && anexo.url) {
+    try { leitura = await analisarImagem(anexo.url, anexo.caption); }
+    catch (e) { console.error("[VISAO ✗] " + telefone + ": " + e.message); }
+    if (leitura) console.log("[VISAO] " + telefone + " → " + leitura.tipo + (leitura.valor ? " " + leitura.valor : "") + " | " + (leitura.descricao || ""));
+  }
+
+  // Foto que NÃO é comprovante (prato, print, cardápio de outro lugar...): vira
+  // assunto da conversa e a Luz responde no contexto — em vez de ir pro Dourado.
+  if (leitura && leitura.tipo !== "comprovante") {
+    const txt = "[FOTO] " + (leitura.descricao || "imagem sem descrição") + (anexo.caption ? " | legenda: " + anexo.caption : "");
+    bufferAdd(telefone, txt);
+    agendarProcessamento(telefone);
+    return;
+  }
+
+  const detalhes = leitura ? [
+    leitura.valor ? "💰 Valor: " + leitura.valor : null,
+    leitura.pagador ? "👤 Pagador: " + leitura.pagador : null,
+    leitura.banco ? "🏦 Banco: " + leitura.banco : null,
+    leitura.data ? "📅 Data: " + leitura.data : null
+  ].filter(Boolean) : [];
+
+  // 1) Cliente: confirma que chegou (em vez de sumir) — citando o valor lido, se houver.
   await enviarMensagem(telefone,
-    "Recebi seu " + (anexo.tipo === "imagem" ? "comprovante" : anexo.tipo) + " por aqui! 📎 Já passei pro *Dourado* confirmar e preparar seu pedido. Assim que estiver pronto, ele te avisa, tá? Obrigada!",
+    "Recebi seu " + (anexo.tipo === "imagem" ? "comprovante" + (leitura && leitura.valor ? " de *" + leitura.valor + "*" : "") : anexo.tipo) +
+    " por aqui! 📎 Já passei pro *Dourado* confirmar e preparar seu pedido. Assim que estiver pronto, ele te avisa, tá? Obrigada!",
     { fracionar: false });
 
   // 2) Memória: a Luz precisa saber que o anexo existiu, senão na próxima
   //    mensagem de texto ela volta a dizer que "não recebeu nada".
-  const nota = "[cliente enviou um anexo: " + anexo.tipo + (anexo.caption ? " — \"" + anexo.caption + "\"" : "") + "]";
+  const nota = "[cliente enviou um anexo: " + anexo.tipo + (anexo.caption ? " — \"" + anexo.caption + "\"" : "") +
+    (detalhes.length ? " — " + detalhes.join(", ").replace(/[💰👤🏦📅] /g, "") : "") + "]";
   await adicionarMensagem(telefone, "user", nota);
   await adicionarMensagem(telefone, "assistant", "Recebi seu " + anexo.tipo + "! Já passei pro Dourado confirmar e preparar o pedido.");
 
@@ -1641,7 +1731,8 @@ async function tratarAnexo(telefone, anexo) {
   const aviso =
     "📎 *COMPROVANTE / ANEXO RECEBIDO — pedido pra retirada*\n\n" +
     "📱 Cliente: " + telefone + "\n" +
-    "🗂️ Tipo: " + anexo.tipo + (anexo.caption ? "\n📝 Legenda: " + anexo.caption : "") + "\n\n" +
+    "🗂️ Tipo: " + anexo.tipo + (anexo.caption ? "\n📝 Legenda: " + anexo.caption : "") + "\n" +
+    (detalhes.length ? detalhes.join("\n") + "\n" : "") + "\n" +
     (ultimas ? "💬 Últimas mensagens:\n" + ultimas + "\n\n" : "") +
     "👉 Confere o pagamento e, se estiver ok, *prepara o pedido* e avisa o cliente.";
   try {
@@ -2042,11 +2133,21 @@ app.post("/webhook", async (req, res) => {
 
     const telefone = body.phone;
 
-    // ── ÁUDIO: o bot ainda não transcreve. Em vez de ignorar, pede texto. ──
+    // ── ÁUDIO (mensagem de voz): transcreve e trata como texto. Sem chave de
+    //    transcrição (ou se falhar), pede pra mandar por texto, como antes. ──
     if (telefone && body.audio && !(body.text && body.text.message)) {
-      console.log("[AUDIO] de " + telefone + " — pedindo para mandar por texto");
-      try { await enviarMensagem(telefone, "Oi! 😊 Por aqui ainda não consigo ouvir áudios. Pode me mandar sua mensagem por *texto*? Aí te ajudo rapidinho!"); } catch (e) {}
-      return res.status(200).json({ ok: true });
+      res.status(200).json({ ok: true }); // ack rápido pra Z-API; transcrição segue em background
+      const urlAudio = body.audio.audioUrl || body.audio.url || "";
+      const pedirTexto = () => enviarMensagem(telefone, "Oi! 😊 Não consegui ouvir esse áudio direito. Pode me mandar por *texto*? Aí te ajudo rapidinho!").catch(() => {});
+      (async () => {
+        if (!CONFIG.STT_API_KEY) { console.log("[AUDIO] de " + telefone + " — sem STT configurado, pedindo texto"); return pedirTexto(); }
+        const texto = await transcreverAudio(urlAudio);
+        if (!texto) { console.log("[AUDIO] de " + telefone + " — transcrição vazia"); return pedirTexto(); }
+        console.log("[AUDIO ✓] " + telefone + ": " + texto.substring(0, 160));
+        bufferAdd(telefone, texto);
+        agendarProcessamento(telefone);
+      })().catch(e => { console.error("[AUDIO ✗] " + telefone + ": " + e.message); pedirTexto(); });
+      return;
     }
 
     // ── IMAGEM / DOCUMENTO / VÍDEO (ex.: comprovante de PIX): confirma, registra e repassa pro Dourado. ──
@@ -2298,6 +2399,96 @@ setInterval(async () => {
 
 // ── DASHBOARD DE LEADS (acesso restrito ao gerente) ─────────
 // Acesse: GET /dashboard?phone=5511954657178 (número do Dourado)
+// ============================================================
+// EVAL DA LUZ — cenários reais contra o modelo (blindagem anti-regressão)
+// ============================================================
+// Roda SÓ sob demanda em /eval (cada execução chama a IA ~16x = centavos).
+// Cada caso manda UMA mensagem numa conversa isolada e confere, por regra,
+// se a resposta crua da Luz (antes de o sistema remover marcadores) faz o
+// que o prompt promete. Falhou? Algo no prompt/modelo regrediu — investigue
+// ANTES de publicar. Mudou uma regra do bar? Atualize o caso aqui.
+const LINK_GETIN_RE = /widget\.getinapp\.com\.br\/d6NZKJ6V/;
+const CASOS_EVAL = [
+  { nome: "Saudação + horário",            msg: "oi, tá aberto hoje?",                                        esperar: [/^\s*(oi|olá|ola|e aí|eai|bom dia|boa tarde|boa noite)/i, /abert|fechad|abr[ei]/i], maxEmoji: 1 },
+  { nome: "Opção vegana",                  msg: "tem opção vegana?",                                          esperar: [/vegan/i], naoEsperar: [/n[aã]o temos/i], maxEmoji: 1 },
+  { nome: "Entrega → link do iFood",       msg: "vocês fazem entrega?",                                       esperar: [/ifood\.com\.br\/delivery/i] },
+  { nome: "Retirada no bar",               msg: "posso pedir pelo whats e buscar aí?",                        esperar: [/retir|busc/i], naoEsperar: [/n[aã]o (temos|fazemos) retirada/i] },
+  { nome: "PIX puro na retirada",          msg: "quero pedir pra retirar, como faço o pagamento?",            esperar: [/14096117000125/], naoEsperar: [/\*14096117000125\*|\[14096117000125\]/] },
+  { nome: "Reserva 6 pessoas → GetinApp",  msg: "quero reservar uma mesa pra 6 pessoas no sábado",           esperar: [LINK_GETIN_RE], naoEsperar: [/Dourado/] },
+  { nome: "Grupo de 25 → GetinApp",        msg: "somos 25 pessoas, dá pra reservar?",                          esperar: [LINK_GETIN_RE], naoEsperar: [/Dourado|95465-7178/] },
+  { nome: "Grupo de 45 → Dourado",         msg: "vai ser um aniversário com 45 pessoas, como faço?",          esperar: [/Dourado|95465-7178/] },
+  { nome: "Pacote fechado 20 → GetinApp",  msg: "quero fechar o espaço pra 20 pessoas com open bar",          esperar: [LINK_GETIN_RE], naoEsperar: [/Dourado/] },
+  { nome: "Item fora do cardápio → [GERENTE]", msg: "vocês têm sushi?",                                       esperar: [/^\s*\[GERENTE\]/i], naoEsperar: [/n[aã]o temos/i] },
+  { nome: "Dúvida desconhecida → [GERENTE]", msg: "qual a voltagem das tomadas aí pra eu ligar um equipamento?", esperar: [/^\s*\[GERENTE\]/i] },
+  { nome: "Alterar reserva existente → [GERENTE]", msg: "preciso mudar minha reserva de sábado pra domingo",  esperar: [/^\s*\[GERENTE\]/i], naoEsperar: [LINK_GETIN_RE] },
+  { nome: "Boleto → [FINANCEIRO] + Cris",  msg: "meu boleto venceu, como tiro a segunda via?",                esperar: [/^\s*\[FINANCEIRO\]/i, /Cris/], naoEsperar: [/Dourado/] },
+  { nome: "Duas perguntas, duas respostas", msg: "abre que horas amanhã? e tem música ao vivo?",              esperar: [/\d{1,2}\s*h|\d{1,2}:\d{2}/, /m[uú]sica|instagram|GERENTE/i] },
+  { nome: "Sugestão de petisco (sem despejar cardápio)", msg: "o que você me indica de petisco?",            esperar: [/costelinha|frango|pastel|batata|bolinho/i], maxChars: 900 },
+  { nome: "Foto de prato ([FOTO])",        msg: "[FOTO] foto de uma costelinha de porco com batata frita | legenda: tem esse aí?", esperar: [/costelinha/i], naoEsperar: [/\[FOTO\]|descri[cç][aã]o/i] },
+];
+const EMOJI_RE = /\p{Extended_Pictographic}/gu;
+function avaliarResposta(caso, resposta) {
+  const r = String(resposta || "");
+  const falhas = [];
+  for (const re of (caso.esperar || [])) if (!re.test(r)) falhas.push("faltou " + re);
+  for (const re of (caso.naoEsperar || [])) if (re.test(r)) falhas.push("apareceu " + re);
+  if (caso.maxEmoji !== undefined) { const n = (r.match(EMOJI_RE) || []).length; if (n > caso.maxEmoji) falhas.push(n + " emojis (máx " + caso.maxEmoji + ")"); }
+  if (caso.maxChars !== undefined && r.length > caso.maxChars) falhas.push(r.length + " chars (máx " + caso.maxChars + ")");
+  return falhas;
+}
+async function rodarEval(filtro) {
+  const casos = CASOS_EVAL.filter((c, i) => !filtro || filtro(c, i));
+  const out = [];
+  for (let i = 0; i < casos.length; i++) {
+    const caso = casos[i];
+    const tel = "eval:" + Date.now() + ":" + i; // conversa isolada e descartável
+    const t0 = Date.now();
+    let resposta = "", erro = null;
+    try { resposta = await chamarClaude(tel, caso.msg); } catch (e) { erro = e.message; }
+    try { await redis.del("memoria:" + tel); } catch (e) {}
+    const falhas = erro ? ["erro: " + erro] : avaliarResposta(caso, resposta);
+    out.push({ nome: caso.nome, msg: caso.msg, ok: falhas.length === 0, falhas, resposta, ms: Date.now() - t0 });
+    if (i < casos.length - 1) await new Promise(r => setTimeout(r, 700));
+  }
+  return out;
+}
+app.get("/eval", async (req, res) => {
+  if (!painelAutorizado(req)) return res.status(403).send("Acesso negado. Use ?phone=NUMERO_DO_GERENTE (ou ?token=SEGREDO se configurado).");
+  const so = parseInt(req.query.so, 10), caso = parseInt(req.query.caso, 10);
+  const filtro = !isNaN(caso) ? ((c, i) => i === caso) : !isNaN(so) ? ((c, i) => i < so) : null;
+  const inicio = Date.now();
+  const resultados = await rodarEval(filtro);
+  const passou = resultados.filter(r => r.ok).length, falhou = resultados.length - passou;
+  if (req.query.json) return res.json({ passou, falhou, total: resultados.length, ms: Date.now() - inicio, resultados });
+  const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const cor = falhou === 0 ? "#00cc66" : "#ff3344";
+  const linhas = resultados.map((r, i) => `
+    <tr>
+      <td>${r.ok ? "✅" : "❌"}</td>
+      <td><b>${esc(r.nome)}</b><br><small style="color:#888">#${i} · ${r.ms} ms</small></td>
+      <td><code>${esc(r.msg)}</code></td>
+      <td style="white-space:pre-wrap;max-width:520px">${esc(r.resposta)}</td>
+      <td style="color:#ff8899">${esc(r.falhas.join(" | "))}</td>
+    </tr>`).join("");
+  res.send(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Soul Botequim — Eval da Luz</title>
+<style>
+  body { font-family: -apple-system, sans-serif; padding: 24px; background: #1a1a1a; color: #eee; }
+  h1 { color: ${cor}; }
+  .resumo { background: ${cor}; color: #000; padding: 16px; border-radius: 8px; font-size: 20px; font-weight: bold; margin: 20px 0; }
+  table { width: 100%; border-collapse: collapse; background: #2a2a2a; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #333; font-size: 13px; vertical-align: top; }
+  th { background: #333; color: #f5b800; }
+  code { background: #111; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #aaa; }
+  small.n { color:#888 }
+</style></head><body>
+<h1>🧪 Eval da Luz — ${resultados.length} cenários contra o modelo</h1>
+<div class="resumo">${falhou === 0 ? "✅ TODOS OS " + passou + " CENÁRIOS PASSARAM" : "❌ " + falhou + " DE " + resultados.length + " CENÁRIO(S) FALHARAM — INVESTIGUE ANTES DE PUBLICAR"}</div>
+<p><small class="n">Cada execução chama a IA uma vez por cenário (custa centavos). Tempo total: ${Math.round((Date.now() - inicio) / 1000)} s. Parâmetros: <code>?so=N</code> (só os N primeiros) · <code>?caso=N</code> (um só) · <code>?json=1</code>.</small></p>
+<table><thead><tr><th></th><th>Cenário</th><th>Mensagem do cliente</th><th>Resposta crua da Luz</th><th>Falhas</th></tr></thead><tbody>${linhas}</tbody></table>
+</body></html>`);
+});
+
 app.get("/dashboard", async (req, res) => {
   try {
     if (!painelAutorizado(req)) {
