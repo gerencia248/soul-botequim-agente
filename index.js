@@ -1258,6 +1258,7 @@ TOM E VOCABULÁRIO:
 - MÁXIMO 1 emoji na mensagem inteira (não 1 por parágrafo, não 1 por linha)
 - NÃO repita saudação se já cumprimentou nesta conversa
 - SAUDAÇÃO SEMPRE PRIMEIRO: se o cliente cumprimentar E perguntar algo na MESMA mensagem (ex.: "oi, tá aberto?"), comece CUMPRIMENTANDO de volta ("Oi, tudo bem? 😊") e SÓ DEPOIS responda. NUNCA responda a pergunta antes do cumprimento na primeira mensagem da conversa.
+- RESPONDA TODAS AS PERGUNTAS: se o cliente fizer mais de uma pergunta (na mesma mensagem ou em mensagens seguidas que chegaram juntas), responda TODAS — nunca ignore nenhuma. Ex.: "posso só chegar hoje? e que horas tem música?" → responda sobre chegar/reserva E sobre a música (programação é no Instagram @soulbotequim). Se não souber UMA delas, use [GERENTE] pra essa e responda as outras normalmente — nunca deixe uma pergunta sem resposta.
 - Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
 - DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. O marcador vai SEMPRE na PRIMEIRA posição da resposta, e a resposta inteira é dirigida ao CLIENTE. NUNCA escreva um recado/pergunta para o gerente dentro da resposta (ex.: "Oi! Cliente perguntou se... pode confirmar?") — o cliente veria isso. O sistema já encaminha a pergunta do cliente ao gerente automaticamente. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva NOVA/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos"). EXCEÇÃO: alterar/remarcar uma reserva JÁ EXISTENTE (mudar dia, horário ou número de pessoas de uma reserva que o cliente já fez) NÃO é self-service pelo link do GetinApp — nesse caso use [GERENTE] e diga que vai confirmar a alteração com o gerente, em vez de só prometer e não encaminhar de verdade.
 - DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai confirmar com a *Cris* (financeiro). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou confirmar isso com a nossa Cris do financeiro e já te respondo." NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
@@ -1550,6 +1551,26 @@ function dividirEmMensagens(texto) {
   return partes.length ? partes : [texto.trim()];
 }
 
+// ── RETRY DE ENVIO (Z-API) ──────────────────
+// A Z-API às vezes devolve 502/timeout transitório. Sem retry, um único soluço
+// fazia a Luz simplesmente não responder — e, no meio de um lead, o lead se
+// perdia em silêncio (o resumo pro Dourado não saía). Aqui reenviamos até 3x
+// com uma pausa crescente e um timeout, pra falha passageira se resolver sozinha.
+async function postZapiComRetry(url, payload, headers, tentativas = 3) {
+  let ultimoErro;
+  for (let t = 1; t <= tentativas; t++) {
+    try {
+      return await axios.post(url, payload, { headers, timeout: 30000 });
+    } catch (e) {
+      ultimoErro = e;
+      const status = (e.response && e.response.status) || e.code || e.message;
+      console.error("[ZAPI-RETRY " + t + "/" + tentativas + "] falha ao enviar (" + status + ")");
+      if (t < tentativas) await new Promise(r => setTimeout(r, 1500 * t));
+    }
+  }
+  throw ultimoErro;
+}
+
 // ── ENVIAR MENSAGEM ──────────────────────────────────────────
 async function enviarMensagem(telefone, texto, opts = {}) {
   const textoFinal = sanitizarParaWhatsApp(texto);
@@ -1562,8 +1583,8 @@ async function enviarMensagem(telefone, texto, opts = {}) {
   for (let i = 0; i < partes.length; i++) {
     // delayMessage: segundos que o WhatsApp mostra "digitando..." antes de enviar (mais humano).
     const digitando = Math.min(3, Math.max(1, Math.round(partes[i].length / 70)));
-    await axios.post(url, { phone: telefone, message: partes[i], delayMessage: digitando },
-      { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } });
+    await postZapiComRetry(url, { phone: telefone, message: partes[i], delayMessage: digitando },
+      { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" });
     // Espaça as mensagens (mantém a ordem e um ritmo natural de digitação).
     if (i < partes.length - 1) {
       await new Promise(r => setTimeout(r, (digitando + 0.5) * 1000));
@@ -1575,8 +1596,8 @@ async function enviarMensagem(telefone, texto, opts = {}) {
 // Usa o send-image da Z-API com a URL que o próprio webhook entregou.
 async function enviarImagem(telefone, imageUrl, caption) {
   const url = "https://api.z-api.io/instances/" + CONFIG.ZAPI_INSTANCE_ID + "/token/" + CONFIG.ZAPI_TOKEN + "/send-image";
-  await axios.post(url, { phone: telefone, image: imageUrl, caption: caption || "" },
-    { headers: { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } });
+  await postZapiComRetry(url, { phone: telefone, image: imageUrl, caption: caption || "" },
+    { "Client-Token": CONFIG.ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" });
 }
 
 // ── ANEXOS (imagem / documento / vídeo) ──────────────────────
