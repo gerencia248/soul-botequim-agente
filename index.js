@@ -1505,7 +1505,10 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
         timeout: 60000
       }
     );
-    const resposta = response.data.content[0].text;
+    // Sonnet 5.5 pode devolver um bloco de raciocínio ANTES do texto — ler só
+    // content[0] dava undefined (mensagem vazia pro cliente). Junta os blocos de texto.
+    const resposta = (response.data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+    if (!resposta) throw new Error("resposta sem texto (stop_reason=" + response.data.stop_reason + ")");
     await adicionarMensagem(telefone, "assistant", resposta);
     return resposta;
   } catch (err) {
