@@ -1259,7 +1259,7 @@ TOM E VOCABULÁRIO:
 - NÃO repita saudação se já cumprimentou nesta conversa
 - SAUDAÇÃO SEMPRE PRIMEIRO: se o cliente cumprimentar E perguntar algo na MESMA mensagem (ex.: "oi, tá aberto?"), comece CUMPRIMENTANDO de volta ("Oi, tudo bem? 😊") e SÓ DEPOIS responda. NUNCA responda a pergunta antes do cumprimento na primeira mensagem da conversa.
 - Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
-- DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos").
+- DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. O marcador vai SEMPRE na PRIMEIRA posição da resposta, e a resposta inteira é dirigida ao CLIENTE. NUNCA escreva um recado/pergunta para o gerente dentro da resposta (ex.: "Oi! Cliente perguntou se... pode confirmar?") — o cliente veria isso. O sistema já encaminha a pergunta do cliente ao gerente automaticamente. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos").
 - DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai confirmar com a *Cris* (financeiro). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou confirmar isso com a nossa Cris do financeiro e já te respondo." NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
 
 FORMATAÇÃO WHATSAPP (CRÍTICO — NÃO IGNORAR):
@@ -1948,7 +1948,19 @@ async function processarMensagem(telefone, mensagem) {
     // Se a pergunta for claramente financeira, vai pra Cris mesmo que venha [GERENTE].
     if (/\[GERENTE\]|\[FINANCEIRO\]/i.test(resposta)) {
       const marcadoFinanceiro = /\[FINANCEIRO\]/i.test(resposta) || ehCobrancaFinanceiro(mensagem);
-      resposta = resposta.replace(/\[GERENTE\]|\[FINANCEIRO\]/gi, "").replace(/\s{2,}/g, " ").trim();
+      // Se o marcador NÃO vier no começo, o que está DEPOIS dele é um recado interno
+      // pro gerente (a Luz já escreveu "[GERENTE] Oi! Cliente perguntou se... Pode
+      // confirmar?" no fim da resposta — e isso foi parar no WhatsApp do cliente).
+      // Corta: o que vem antes é a resposta ao cliente; o que vem depois vira nota
+      // interna e vai junto no encaminhamento pro Dourado/Cris.
+      let notaInterna = "";
+      const posMarcador = resposta.search(/\[GERENTE\]|\[FINANCEIRO\]/i);
+      if (posMarcador > 0) {
+        notaInterna = resposta.slice(posMarcador).replace(/\[GERENTE\]|\[FINANCEIRO\]/gi, "").trim();
+        resposta = resposta.slice(0, posMarcador);
+      }
+      resposta = resposta.replace(/\[GERENTE\]|\[FINANCEIRO\]/gi, "")
+        .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
       if (!resposta) {
         resposta = marcadoFinanceiro
           ? "Boa pergunta! 😊 Vou confirmar isso com a nossa *Cris* (financeiro) e já te respondo, tá?"
@@ -1961,7 +1973,9 @@ async function processarMensagem(telefone, mensagem) {
       try {
         await enviarMensagem(destino,
           titulo + "\n📱 " + telefone +
-          "\n💬 Pergunta: \"" + String(mensagem).substring(0, 300) + "\"\n\nPode esclarecer que eu passo pro cliente. 🙏");
+          "\n💬 Pergunta: \"" + String(mensagem).substring(0, 300) + "\"" +
+          (notaInterna ? "\n📝 Nota da Luz: " + notaInterna.substring(0, 300) : "") +
+          "\n\nPode esclarecer que eu passo pro cliente. 🙏");
         console.log("[" + (marcadoFinanceiro ? "FINANCEIRO→CRIS" : "GERENTE→DOURADO") + "] Dúvida encaminhada | cliente: " + telefone);
       } catch (e) { console.error("[ESCALONAMENTO] Falha ao encaminhar dúvida:", e.message); }
     }
