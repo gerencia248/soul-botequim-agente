@@ -770,14 +770,16 @@ const CARDAPIO_DOSES = `🥃 *DOSES — Soul Botequim*
 
 // ── OPÇÕES VEGANAS E VEGETARIANAS ───────────────────────────
 const OPCOES_VEGANAS = `🌱 *OPÇÕES VEGANAS — Soul Botequim*
+_(sem nada de origem animal: sem carne, leite, manteiga, queijo, ovo ou mel)_
 
 • Chips Batata Doce R$30 — Colorido, sequinho e bem feito
-• Batata Frita R$42 — Com sal temperado da casa e maionese de leite*
-• Palmito Pupunha na Brasa R$65 — Com manteiga de alho, ervas e amêndoas torradas*
-• Legumes na Brasa R$70 — Com chimichurri e farofa de cebola
-• Quiabo na Brasa com Coalhada Fresca R$46*
 
-_*Consulte o garçom para adaptações_`;
+*Dá pra adaptar — é só pedir SEM:*
+• Batata Frita R$42 — pedir *sem a maionese* (ela é de leite)
+• Quiabo na Brasa R$46 — pedir *sem a coalhada* (fica o quiabo grelhado com páprica)
+• Legumes na Brasa R$70 — com chimichurri; confirme com o garçom a farofa de cebola
+
+_Palmito Pupunha (manteiga de alho) e Cogumelos (manteiga e ovo) são vegetarianos, não veganos._`;
 
 const OPCOES_VEGETARIANAS = `🥗 *OPÇÕES VEGETARIANAS — Soul Botequim*
 
@@ -1351,7 +1353,8 @@ INFORMAÇÕES DO BAR:
 - Sem voucher/vale-alimentação
 - Pagamento: crédito (sem parcelamento), débito, Pix, dinheiro, Amex
 - Temos projetor e televisão | Transmitimos jogos de futebol e outros esportes
-- Temos opções veganas no cardápio
+- VEGANO ≠ VEGETARIANO. Vegano NÃO pode ter NADA de origem animal: carne, peixe, leite, manteiga, queijo, coalhada, catupiry, maionese de leite, ovo, mel. Vegetariano pode ter leite/queijo/ovo (só não carne/peixe). NUNCA chame de vegano um prato cuja descrição tenha manteiga, coalhada, queijo, ovo, mel ou maionese de leite.
+- Vegano de verdade no cardápio: Chips de Batata Doce. Adaptáveis (avise que precisa pedir SEM): Batata Frita sem a maionese, Quiabo na Brasa sem a coalhada, Legumes na Brasa (chimichurri ok; a farofa de cebola precisa ser confirmada com o garçom). Palmito Pupunha (manteiga de alho) e Cogumelos (manteiga + ovo) NÃO são veganos — são vegetarianos.
 - Não temos petisco para animais (pet friendly apenas para a presença dos pets)
 - DELIVERY/ENTREGA (em casa): fazemos entrega pelo iFood. Link do cardápio e pedidos: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
 - RETIRADA (pedir e buscar no local): SIM, dá pra fazer o pedido aqui pelo WhatsApp e RETIRAR no próprio bar. O cliente escolhe pelo cardápio, a gente prepara e ele passa pra buscar. NUNCA diga que não temos retirada. (Diferença: iFood = entrega em casa; retirada = ele mesmo busca aqui.)
@@ -2444,7 +2447,7 @@ setInterval(async () => {
 const LINK_GETIN_RE = /widget\.getinapp\.com\.br\/d6NZKJ6V/;
 const CASOS_EVAL = [
   { nome: "Saudação + horário",            msg: "oi, tá aberto hoje?",                                        esperar: [/^\s*(oi|olá|ola|e aí|eai|bom dia|boa tarde|boa noite)/i, /abert|fechad|abr[ei]/i], maxEmoji: 1 },
-  { nome: "Opção vegana",                  msg: "tem opção vegana?",                                          esperar: [/vegan|palmito|legumes|quiabo|op[çc][õo]es/i], naoEsperar: [/n[aã]o temos/i], maxEmoji: 1 },
+  { nome: "Opção vegana",                  msg: "tem opção vegana?",                                          esperar: [/chips|batata.?doce/i], naoEsperar: [/n[aã]o temos/i, /manteiga de alho|com coalhada/i], maxEmoji: 1 },
   { nome: "Entrega → link do iFood",       msg: "vocês fazem entrega?",                                       esperar: [/ifood\.com\.br\/delivery/i] },
   { nome: "Retirada no bar",               msg: "posso pedir pelo whats e buscar aí?",                        esperar: [/retir|busc/i], naoEsperar: [/n[aã]o (temos|fazemos) retirada/i] },
   { nome: "PIX puro na retirada",          msg: "quero pedir pra retirar, como faço o pagamento?",            esperar: [/14096117000125/], naoEsperar: [/\*14096117000125\*|\[14096117000125\]/] },
