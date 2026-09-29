@@ -783,12 +783,14 @@ _(sem nada de origem animal: sem carne, leite, manteiga, queijo, ovo ou mel)_
 
 • Chips Batata Doce R$30 — Colorido, sequinho e bem feito
 
-*Dá pra adaptar — é só pedir SEM:*
-• Batata Frita R$42 — pedir *sem a maionese* (ela é de leite)
-• Quiabo na Brasa R$46 — pedir *sem a coalhada* (fica o quiabo grelhado com páprica)
-• Legumes na Brasa R$70 — com chimichurri; confirme com o garçom a farofa de cebola
+*Dá pra adaptar — é só pedir assim:*
+• Batata Frita R$42 — *sem a maionese* (ela é de leite)
+• Legumes na Brasa R$70 — *sem a farofa de cebola* (vai com chimichurri, que é só azeite e ervas)
+• Quiabo na Brasa R$46 — *sem a coalhada* (fica o quiabo grelhado com páprica)
+• Espaguete ao Pomodoro R$48 — *sem queijo por cima* (massa e molho de tomate não levam origem animal)
+• Palmito Pupunha na Brasa R$65 — pergunte ao garçom se pode sair *com azeite no lugar da manteiga de alho*
 
-_Palmito Pupunha (manteiga de alho) e Cogumelos (manteiga e ovo) são vegetarianos, não veganos._`;
+_Cogumelos (manteiga e ovo) é vegetariano, não vegano._`;
 
 const OPCOES_VEGETARIANAS = `🥗 *OPÇÕES VEGETARIANAS — Soul Botequim*
 
@@ -1451,7 +1453,7 @@ INFORMAÇÕES DO BAR:
 - Pagamento: crédito (sem parcelamento), débito, Pix, dinheiro, Amex
 - Temos projetor e televisão | Transmitimos jogos de futebol e outros esportes
 - VEGANO ≠ VEGETARIANO. Vegano NÃO pode ter NADA de origem animal: carne, peixe, leite, manteiga, queijo, coalhada, catupiry, maionese de leite, ovo, mel. Vegetariano pode ter leite/queijo/ovo (só não carne/peixe). NUNCA chame de vegano um prato cuja descrição tenha manteiga, coalhada, queijo, ovo, mel ou maionese de leite.
-- Vegano de verdade no cardápio: Chips de Batata Doce. Adaptáveis (avise que precisa pedir SEM): Batata Frita sem a maionese, Quiabo na Brasa sem a coalhada, Legumes na Brasa (chimichurri ok; a farofa de cebola precisa ser confirmada com o garçom). Palmito Pupunha (manteiga de alho) e Cogumelos (manteiga + ovo) NÃO são veganos — são vegetarianos.
+- Vegano de verdade no cardápio: Chips de Batata Doce. Adaptáveis (diga exatamente como pedir): Batata Frita SEM a maionese; Legumes na Brasa SEM a farofa de cebola (a farofa leva manteiga; o chimichurri é só azeite, vinagre e ervas); Quiabo na Brasa SEM a coalhada; Espaguete ao Pomodoro SEM queijo por cima (massa seca e molho de tomate não têm origem animal); Palmito Pupunha só se a cozinha fizer COM AZEITE no lugar da manteiga de alho — oriente a pedir ao garçom. Cogumelos (manteiga + ovo) NÃO é vegano. Fritadeira compartilhada não desclassifica um item vegano — não levante essa questão por conta própria.
 - Não temos petisco para animais (pet friendly apenas para a presença dos pets)
 - DELIVERY/ENTREGA (em casa): fazemos entrega pelo iFood. Link do cardápio e pedidos: https://www.ifood.com.br/delivery/sao-paulo-sp/soul-botequim-cidade-moncoes/ea4f128a-d5a3-4105-b5e7-631fed695741
 - RETIRADA (pedir e buscar no local): SIM, dá pra fazer o pedido aqui pelo WhatsApp e RETIRAR no próprio bar. O cliente escolhe pelo cardápio, a gente prepara e ele passa pra buscar. NUNCA diga que não temos retirada. (Diferença: iFood = entrega em casa; retirada = ele mesmo busca aqui.)
