@@ -2546,7 +2546,7 @@ setInterval(async () => {
 const LINK_GETIN_RE = /widget\.getinapp\.com\.br\/d6NZKJ6V/;
 const CASOS_EVAL = [
   { nome: "Saudação + horário",            msg: "oi, tá aberto hoje?",                                        esperar: [/^\s*(oi|olá|ola|e aí|eai|bom dia|boa tarde|boa noite)/i, /abert|fechad|abr[ei]/i], maxEmoji: 1 },
-  { nome: "Opção vegana",                  msg: "tem opção vegana?",                                          esperar: [/chips|batata.?doce/i], naoEsperar: [/n[aã]o temos/i, /manteiga de alho|com coalhada/i], maxEmoji: 1 },
+  { nome: "Opção vegana",                  msg: "tem opção vegana?",                                          esperar: [/chips|batata.?doce/i], naoEsperar: [/n[aã]o temos/i, /(?<!sem a )coalhada fresca|(?<!lugar da )manteiga de alho(?! no lugar| então)|quiabo na brasa com coalhada/i], maxEmoji: 1 },
   { nome: "Entrega → link do iFood",       msg: "vocês fazem entrega?",                                       esperar: [/ifood\.com\.br\/delivery/i] },
   { nome: "Retirada no bar",               msg: "posso pedir pelo whats e buscar aí?",                        esperar: [/retir|busc/i], naoEsperar: [/n[aã]o (temos|fazemos) retirada/i] },
   { nome: "PIX puro na retirada",          msg: "quero pedir pra retirar, como faço o pagamento?",            esperar: [/14096117000125/], naoEsperar: [/\*14096117000125\*|\[14096117000125\]/] },
