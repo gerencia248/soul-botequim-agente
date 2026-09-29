@@ -1102,17 +1102,44 @@ function ehFornecedorOuEntregador(t) {
 // Boletos, faturas, cobranças e contas em atraso. Tomamos cuidado para NÃO
 // confundir com o cliente comum perguntando forma de pagamento ou dizendo que
 // o pedido dele atrasou — isso NÃO é financeiro.
+// ── TESTES DE ROTEAMENTO (grátis, sem IA) ─────────────────────────────
+// Blindagem dos desvios por palavra-chave que rodam ANTES do modelo. Caso real
+// (28/09): "Tem carne no cardápio?" caía na Cris porque 'carn[êe]' casava "carne".
+const CASOS_ROTEADOR = [
+  { msg: "Tem carne no cardápio?",                     financeiro: false },
+  { msg: "Quero comer carne",                          financeiro: false },
+  { msg: "vocês têm carne de sol?",                    financeiro: false },
+  { msg: "tem cobrança de rolha?",                     financeiro: false },
+  { msg: "vocês cobram couvert artístico?",            financeiro: false },
+  { msg: "posso pagar com pix na retirada?",           financeiro: false },
+  { msg: "meu pedido atrasou, quero saber do pagamento", financeiro: false },
+  { msg: "meu boleto venceu, como tiro a segunda via?", financeiro: true },
+  { msg: "preciso da nota fiscal do evento",           financeiro: true },
+  { msg: "carnê de pagamento do fornecedor",           financeiro: true },
+  { msg: "cobrança da fatura em atraso",               financeiro: true },
+  { msg: "pagamento em atraso do repasse",             financeiro: true },
+];
+function rodarTestesRoteador() {
+  return CASOS_ROTEADOR.map(c => {
+    const got = ehCobrancaFinanceiro(c.msg);
+    return { msg: c.msg, esperado: c.financeiro, obtido: got, ok: got === c.financeiro };
+  });
+}
+
 function ehCobrancaFinanceiro(t) {
   if (!t) return false;
   const txt = t.toLowerCase();
   // Termos FORTES: sozinhos já indicam cobrança/financeiro
-  const forte = /(boleto|fatura|segunda via|2[ªa] via|inadimpl|duplicata|carn[êe]|nota fiscal|nf-e|financeiro|t[íi]tulo em aberto|quita|regularizar|d[ií]vida|contas a pagar|contas a receber|valor(es)? em aberto|d[ée]bito em aberto)/.test(txt);
+  const forte = /(boleto|fatura|segunda via|2[ªa] via|inadimpl|duplicata|carnê|carne de (pagamento|cobran[çc]a|boleto)|nota fiscal|nf-e|financeiro|t[íi]tulo em aberto|quita|regularizar|d[ií]vida|contas a pagar|contas a receber|valor(es)? em aberto|d[ée]bito em aberto)/.test(txt);
   if (forte) return true;
   // "cobrança/cobrar" só conta como financeiro COM contexto de dívida/documento
   // (evita "tem cobrança de couvert/rolha/taxa?" cair no financeiro/Cris).
   const cobranca = /(cobran[çc]a|cobrar|cobrando)/.test(txt);
   const contextoFin = /(boleto|fatura|d[ií]vida|d[ée]bito|em atraso|atrasad|vencid|vencimento|nota fiscal|repasse|t[íi]tulo|valor em aberto|pagamento em atraso)/.test(txt);
   if (cobranca && contextoFin) return true;
+  // Cliente falando do PRÓPRIO pedido/entrega/mesa (ex.: "meu pedido atrasou,
+  // quero saber do pagamento") NÃO é cobrança — a Luz resolve (regra do prompt).
+  if (/(^|[^a-zà-ú])(pedido|entrega|ifood|retirad|mesa|gar[çc]o|delivery)/.test(txt)) return false;
   // "atraso/vencido/em aberto" só conta se vier junto de algo financeiro
   const atraso = /(atraso|atrasad|vencid|venceu|vencimento|em aberto|pend[êe]ncia|pendente)/.test(txt);
   const financeiro = /(pagamento|pagar|conta|contas|parcela|mensalidade|d[ií]vida|d[ée]bito|repasse|valor a pagar)/.test(txt);
@@ -1270,6 +1297,7 @@ TOM E VOCABULÁRIO:
 - Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
 - DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. O marcador vai SEMPRE na PRIMEIRA posição da resposta, e a resposta inteira é dirigida ao CLIENTE. NUNCA escreva um recado/pergunta para o gerente dentro da resposta (ex.: "Oi! Cliente perguntou se... pode confirmar?") — o cliente veria isso. O sistema já encaminha a pergunta do cliente ao gerente automaticamente. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva NOVA/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos"). EXCEÇÃO: alterar/remarcar uma reserva JÁ EXISTENTE (mudar dia, horário ou número de pessoas de uma reserva que o cliente já fez) NÃO é self-service pelo link do GetinApp — nesse caso use [GERENTE] e diga que vai confirmar a alteração com o gerente, em vez de só prometer e não encaminhar de verdade.
 - DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai confirmar com a *Cris* (financeiro). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou confirmar isso com a nossa Cris do financeiro e já te respondo." NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
+- NUNCA CONFIRME O QUE VOCÊ NÃO VERIFICOU: alteração/cancelamento de reserva, liberação de mesa, pedido pronto ou pagamento aprovado só quem confirma é o gerente/equipe. Se o cliente disser "já foi feito", "já resolvi" ou "pode confirmar", responda de forma simpática que anotou e que o gerente confirma com ele — NUNCA diga "sua reserva ficou certinha" ou "está confirmado" por conta própria. Se você já disse antes que ia confirmar com o gerente, não repita a mesma frase a cada mensagem: responda ao que foi perguntado e mencione o retorno só se fizer sentido.
 
 FORMATAÇÃO WHATSAPP (CRÍTICO — NÃO IGNORAR):
 - Negrito: use UM asterisco *assim*. NUNCA use **dois** (vira markdown literal feio no app)
@@ -1757,7 +1785,7 @@ async function tratarAnexo(telefone, anexo) {
 // ── DEBOUNCE / AGREGAÇÃO DE MENSAGENS EM RAJADA ──────────────
 // Cliente manda várias mensagens seguidas ("Marcos" + "obrigado"): junta tudo
 // numa janela curta e responde UMA vez só (evita respostas repetidas).
-const DEBOUNCE_MS = 3000;
+const DEBOUNCE_MS = 5000;
 const _bufMsgs = {};
 const _bufTimers = {};
 function bufferAdd(telefone, mensagem) {
@@ -2341,6 +2369,8 @@ app.listen(CONFIG.PORT, () => {
   const passou = res.filter(r => r.ok).length;
   const falhou = res.filter(r => !r.ok).length;
   console.log("\n📋 TESTES DE HORÁRIO: " + passou + "/" + res.length + " passaram");
+  const rot = rodarTestesRoteador(); const rotOk = rot.filter(r => r.ok).length;
+  console.log("📋 TESTES DE ROTEAMENTO: " + rotOk + "/" + rot.length + " passaram" + (rotOk < rot.length ? " ❌ " + rot.filter(r => !r.ok).map(r => '"' + r.msg + '"').join(", ") : ""));
   if (falhou > 0) {
     console.error("⚠️ ATENÇÃO: " + falhou + " teste(s) FALHOU(aram). Bot pode dar resposta errada!");
     for (const r of res.filter(r => !r.ok)) {
@@ -2428,6 +2458,8 @@ const CASOS_EVAL = [
   { nome: "Duas perguntas, duas respostas", msg: "abre que horas amanhã? e tem música ao vivo?",              esperar: [/\d{1,2}\s*h|\d{1,2}:\d{2}/, /m[uú]sica|instagram|GERENTE/i] },
   { nome: "Sugestão de petisco (sem despejar cardápio)", msg: "o que você me indica de petisco?",            esperar: [/costelinha|frango|pastel|batata|bolinho/i], maxChars: 900 },
   { nome: "Foto de prato ([FOTO])",        msg: "[FOTO] foto de uma costelinha de porco com batata frita | legenda: tem esse aí?", esperar: [/costelinha/i], naoEsperar: [/\[FOTO\]|descri[cç][aã]o/i] },
+  { nome: "Carne no cardápio (não é financeiro)", msg: "Tem carne no cardápio?",                            esperar: [/carne|costelinha|fraldinha|torresmo|croquete/i], naoEsperar: [/Cris|financeiro|boleto/i] },
+  { nome: "'Já foi feito' não vira confirmação", msg: "já fiz a alteração da reserva com vocês, pode confirmar?", naoEsperar: [/ficou certinh|est[áa] confirmad[ao]|confirmo (a |sua )?(reserva|altera)/i] },
 ];
 const EMOJI_RE = /\p{Extended_Pictographic}/gu;
 function avaliarResposta(caso, resposta) {
@@ -2462,7 +2494,8 @@ app.get("/eval", async (req, res) => {
   const inicio = Date.now();
   const resultados = await rodarEval(filtro);
   const passou = resultados.filter(r => r.ok).length, falhou = resultados.length - passou;
-  if (req.query.json) return res.json({ passou, falhou, total: resultados.length, ms: Date.now() - inicio, resultados });
+  const roteador = rodarTestesRoteador(); const rotFalhou = roteador.filter(r => !r.ok).length;
+  if (req.query.json) return res.json({ passou, falhou, total: resultados.length, ms: Date.now() - inicio, roteador: { passou: roteador.length - rotFalhou, falhou: rotFalhou, casos: roteador }, resultados });
   const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
   const cor = falhou === 0 ? "#00cc66" : "#ff3344";
   const linhas = resultados.map((r, i) => `
@@ -2489,6 +2522,8 @@ app.get("/eval", async (req, res) => {
 <div class="resumo">${falhou === 0 ? "✅ TODOS OS " + passou + " CENÁRIOS PASSARAM" : "❌ " + falhou + " DE " + resultados.length + " CENÁRIO(S) FALHARAM — INVESTIGUE ANTES DE PUBLICAR"}</div>
 <p><small class="n">Cada execução chama a IA uma vez por cenário (custa centavos). Tempo total: ${Math.round((Date.now() - inicio) / 1000)} s. Parâmetros: <code>?so=N</code> (só os N primeiros) · <code>?caso=N</code> (um só) · <code>?json=1</code>.</small></p>
 <table><thead><tr><th></th><th>Cenário</th><th>Mensagem do cliente</th><th>Resposta crua da Luz</th><th>Falhas</th></tr></thead><tbody>${linhas}</tbody></table>
+<h2 style="color:${rotFalhou ? "#ff3344" : "#00cc66"};margin-top:32px">🧭 Roteamento por palavra-chave (grátis, sem IA) — ${roteador.length - rotFalhou}/${roteador.length}</h2>
+<table><thead><tr><th></th><th>Mensagem</th><th>Vai pra Cris (financeiro)?</th></tr></thead><tbody>${roteador.map(r => `<tr><td>${r.ok ? "✅" : "❌"}</td><td><code>${esc(r.msg)}</code></td><td>${r.obtido ? "sim" : "não"}${r.ok ? "" : " (esperado: " + (r.esperado ? "sim" : "não") + ")"}</td></tr>`).join("")}</tbody></table>
 </body></html>`);
 });
 
