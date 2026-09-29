@@ -1031,6 +1031,9 @@ function perguntaSobreHorario(t) {
 }
 
 function querRecomendacaoDrink(t) {
+  // Se fala de VINHO (ou de um prato), não é o fluxo de drink — deixa a Luz harmonizar.
+  if (/vinho|vinhos|espumante|ros[ée]\b|carta/.test(String(t || "").toLowerCase())) return false;
+  if (falaDeComida(t)) return false; // "qual me recomenda com o polvo" = harmonização, não drink
   return ["me indica","me recomenda","qual drink","o que você sugere","o que me recomenda",
     "não sei o que pedir","nao sei o que pedir","me sugere um drink","qual é o melhor",
     "algo refrescante","algo forte","drink leve","drink especial"].some(g => t.toLowerCase().includes(g));
@@ -1046,7 +1049,7 @@ function querCardapio(t) {
   const txt = t.toLowerCase();
   // PRIMEIRO as categorias ESPECÍFICAS — assim "cardápio de comida" manda só comida,
   // "cardápio de vinho" só vinho, etc. (antes a palavra "cardápio" caía no completo).
-  if (["vinho","vinhos","carta de vinho","carta de vinhos","wine"].some(g => txt.includes(g))) return "vinhos";
+  if (["vinho","vinhos","carta de vinho","carta de vinhos","carta toda","carta completa","carta inteira","a carta","wine"].some(g => txt.includes(g))) return "vinhos";
   if (["dose","doses","cachaça","cachaca","whisky","whiskey","rum","tequila","vodka"].some(g => txt.includes(g))) return "doses";
   if (["comida","comer","petisco","petiscos","lanche","lanches","food","prato","proteína"].some(g => txt.includes(g))) return "comidas";
   if (["drink","drinque","drinks","cocktail","coquetél","coquetel","bebida","bebidas"].some(g => txt.includes(g))) return "drinks";
@@ -1065,7 +1068,10 @@ function pedeSugestao(t) {
     "o que você gosta","o que voce gosta","o que mais gosta","o que você mais gosta",
     "o que você acha","o que voce acha","o que vale a pena","o que pedir","o que devo pedir",
     "me ajuda a escolher","me ajuda escolher","uma dica","alguma dica","alguma sugestão",
-    "qual o melhor","qual é o melhor","quais os melhores","o que você indica","o que voce indica"
+    "qual o melhor","qual é o melhor","quais os melhores","o que você indica","o que voce indica",
+    // harmonização / acompanhamento ("tem vinho pra harmonizar com o polvo?", "qual vai bem com a fraldinha?")
+    "harmoniz","combina","combinar","vai bem","acompanha","pra acompanhar","para acompanhar",
+    "pra tomar com","para tomar com","pra ir com","para ir com","qual vinho","que vinho","qual me","qual você me","qual voce me"
   ].some(g => txt.includes(g));
 }
 
@@ -1120,12 +1126,23 @@ const CASOS_ROTEADOR = [
   { msg: "carnê de pagamento do fornecedor",           financeiro: true },
   { msg: "cobrança da fatura em atraso",               financeiro: true },
   { msg: "pagamento em atraso do repasse",             financeiro: true },
+  // Caso real (Ligia, 28/09): "vinho" mandava a carta inteira e "recomenda" caía no fluxo de drink
+  { msg: "E tem vinho para harmonizar c o polvo",        sugestao: true,  drink: false },
+  { msg: "Qual me recomenda c o polvo",                  drink: false,    comida: true },
+  { msg: "qual vinho vai bem com a fraldinha?",          sugestao: true,  drink: false },
+  { msg: "Quero vinho",                                  cardapio: "vinhos", sugestao: false },
+  { msg: "Tem a carta toda?",                            cardapio: "vinhos" },
+  { msg: "me indica um drink refrescante",               drink: true,     comida: false },
+  { msg: "o que você me indica de petisco?",             sugestao: true,  comida: true },
 ];
+const FN_ROTEADOR = { financeiro: ehCobrancaFinanceiro, sugestao: pedeSugestao, drink: querRecomendacaoDrink, cardapio: querCardapio, comida: falaDeComida };
 function rodarTestesRoteador() {
-  return CASOS_ROTEADOR.map(c => {
-    const got = ehCobrancaFinanceiro(c.msg);
-    return { msg: c.msg, esperado: c.financeiro, obtido: got, ok: got === c.financeiro };
-  });
+  const out = [];
+  for (const c of CASOS_ROTEADOR) for (const k of Object.keys(FN_ROTEADOR)) if (k in c) {
+    const got = FN_ROTEADOR[k](c.msg);
+    out.push({ msg: c.msg, fn: k, esperado: c[k], obtido: got, ok: got === c[k] });
+  }
+  return out;
 }
 
 function ehCobrancaFinanceiro(t) {
@@ -1153,7 +1170,11 @@ function falaDeComida(t) {
   if (!t) return false;
   const txt = t.toLowerCase();
   return ["comida","comer","petisco","petiscos","prato","pratos","lanche","lanches",
-    "proteína","proteina","carne","carnes","sobremesa","beliscar","fome","jantar","almoç"].some(g => txt.includes(g));
+    "proteína","proteina","carne","carnes","sobremesa","beliscar","fome","jantar","almoç",
+    // nomes de pratos do cardápio (senão "qual me recomenda com o polvo" vira pedido de drink)
+    "polvo","fraldinha","ancho","frango","batata","torresmo","croquete","bolinho","coxinha","pastel","bolovo",
+    "cogumelo","palmito","quiabo","atum","tartare","rosbife","parmeggiana","oswaldo","mignon","linguiça","linguica",
+    "choripan","cheeseburger","hamburguer","hambúrguer","bauru","crepe","legumes","peixe","camarão","camarao","frutos do mar"].some(g => txt.includes(g));
 }
 
 // Cliente NÃO CONSEGUIU fazer a reserva pelo GetIn (link com erro / não abre).
@@ -1299,6 +1320,7 @@ TOM E VOCABULÁRIO:
 - Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
 - DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. O marcador vai SEMPRE na PRIMEIRA posição da resposta, e a resposta inteira é dirigida ao CLIENTE. NUNCA escreva um recado/pergunta para o gerente dentro da resposta (ex.: "Oi! Cliente perguntou se... pode confirmar?") — o cliente veria isso. O sistema já encaminha a pergunta do cliente ao gerente automaticamente. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva NOVA/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos"). EXCEÇÃO: alterar/remarcar uma reserva JÁ EXISTENTE (mudar dia, horário ou número de pessoas de uma reserva que o cliente já fez) NÃO é self-service pelo link do GetinApp — nesse caso use [GERENTE] e diga que vai confirmar a alteração com o gerente, em vez de só prometer e não encaminhar de verdade.
 - DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai confirmar com a *Cris* (financeiro). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou confirmar isso com a nossa Cris do financeiro e já te respondo." NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
+- NÃO REVISITE O PASSADO POR CONTA PRÓPRIA: responda SOMENTE ao que o cliente perguntou AGORA. Nunca "corrija" espontaneamente algo que você disse em mensagens anteriores, nunca traga de volta reservas, pedidos, leads ou recomendações antigas, e não peça desculpas por conversas passadas — a menos que o cliente pergunte sobre isso. Se o cardápio ou a carta mudaram, simplesmente use as informações atuais daqui pra frente, sem comentar a mudança.
 - NUNCA CONFIRME O QUE VOCÊ NÃO VERIFICOU: alteração/cancelamento de reserva, liberação de mesa, pedido pronto ou pagamento aprovado só quem confirma é o gerente/equipe. Se o cliente disser "já foi feito", "já resolvi" ou "pode confirmar", responda de forma simpática que anotou e que o gerente confirma com ele — NUNCA diga "sua reserva ficou certinha" ou "está confirmado" por conta própria. Se você já disse antes que ia confirmar com o gerente, não repita a mesma frase a cada mensagem: responda ao que foi perguntado e mencione o retorno só se fizer sentido.
 
 FORMATAÇÃO WHATSAPP (CRÍTICO — NÃO IGNORAR):
@@ -1437,7 +1459,7 @@ FLUXO DE RETIRADA / PEDIR PRA LEVAR (SEGUIR À RISCA):
 CARDÁPIO COMPLETO COM PREÇOS — sua FONTE OFICIAL de preços e itens.
 - Use para responder perguntas de preço/item de forma CONVERSADA e curta (ex.: "O Jameson é R$38 😊").
 - NÃO cole o cardápio inteiro nessas respostas — responda só o que o cliente perguntou.
-- Se o cliente quiser ver tudo, ele pede "cardápio" e o sistema envia os cards completos.
+- Se o cliente quiser ver tudo, diga: "me manda 'carta de vinhos' (ou 'cardápio') que eu te envio completo". NUNCA fale em "sistema", "cards", "prompt", "registrado" ou qualquer termo interno — pro cliente, quem manda tudo é você, a Luz.
 - NUNCA invente preço nem descrição. Se o cliente perguntar por um item/produto que NÃO está na lista abaixo (ex.: growler, uma cerveja ou marca específica, um prato que não consta), NÃO diga que "não temos" — pode existir e só não estar aqui. Comece com o marcador [GERENTE] e diga que vai passar pro nosso gerente Dourado, que esclarece melhor. Ex.: "[GERENTE] Boa! 😊 Vou passar pro nosso gerente Dourado, que te esclarece isso certinho e já te retorna." (o sistema encaminha a pergunta pra ele automaticamente).
 ═══════════════════════════════════════════
 
@@ -1494,7 +1516,7 @@ async function chamarClaude(telefone, mensagemUsuario, tentativa = 1) {
       if (leadCli.tipoLead) partes.push("Tipo do último contato: " + leadCli.tipoLead);
       if (leadCli.dia) partes.push("Reserva/interesse anterior: " + leadCli.dia);
       if (leadCli.pessoas) partes.push(leadCli.pessoas + " pessoas");
-      ancoraCliente = "\n\nCLIENTE JA CONHECIDO (recorrente) — voce JA falou com ele antes. Use estes dados pra personalizar com naturalidade (sem soar robotico, sem despejar tudo de uma vez): " + partes.join(" | ") + ". Se ele perguntar se voce lembra dele, confirme com carinho e cite algo que voce sabe.";
+      ancoraCliente = "\n\nCLIENTE JA CONHECIDO (recorrente) — voce JA falou com ele antes. Use estes dados SO se forem relevantes para o que ele perguntou AGORA (ex.: ele voltar a falar da reserva). NAO cite a reserva/interesse anterior espontaneamente e NAO pergunte se ele quer alterar/confirmar algo que ele nao mencionou: " + partes.join(" | ") + ". Se ele perguntar se voce lembra dele, confirme com carinho e cite algo que voce sabe.";
     } else if (temHistorico) {
       ancoraCliente = "\n\nCLIENTE RECORRENTE: voce JA conversou com esta pessoa antes (o historico esta disponivel acima). Se ele perguntar se voce lembra dele, seja caloroso e reconheca — NUNCA diga que comeca do zero.";
     }
@@ -2463,6 +2485,8 @@ const CASOS_EVAL = [
   { nome: "Sugestão de petisco (sem despejar cardápio)", msg: "o que você me indica de petisco?",            esperar: [/torresmo|frango|pastel|batata|bolinho|coxinha/i], maxChars: 900 },
   { nome: "Foto de prato ([FOTO])",        msg: "[FOTO] foto de um frango frito dourado com batata frita | legenda: tem esse aí?", esperar: [/frango/i], naoEsperar: [/\[FOTO\]|descri[cç][aã]o/i] },
   { nome: "Carne no cardápio (não é financeiro)", msg: "Tem carne no cardápio?",                            esperar: [/carne|fraldinha|torresmo|croquete|oswaldo/i], naoEsperar: [/Cris|financeiro|boleto|picanha|costelinha/i] },
+  { nome: "Vinho pra harmonizar (tinto com fraldinha)", msg: "qual vinho vai bem com a fraldinha?",       esperar: [/malbec|cabernet|scorpio|riveras|tinto|aglianico|krontiras/i], naoEsperar: [/refrescante\*?, \*?forte|drink ideal/i] },
+  { nome: "Vinho pra harmonizar (polvo)",  msg: "tem vinho para harmonizar com o polvo?",                  esperar: [/branco|torront|chardonnay|fiano|pinot grigio|espumante|ros[ée]|pecorino|moscato/i], naoEsperar: [/drink ideal|refrescante\*?, \*?forte/i] },
   { nome: "Item que saiu (costelinha) → avisa e sugere", msg: "tem costelinha de porco?",                   esperar: [/sa[ií]u|n[aã]o (temos|est[áa]|tem) mais|fraldinha|oswaldo|torresmo/i], naoEsperar: [/\[GERENTE\]|R\$78/] },
   { nome: "'Já foi feito' não vira confirmação", msg: "já fiz a alteração da reserva com vocês, pode confirmar?", naoEsperar: [/ficou certinh|est[áa] confirmad[ao]|confirmo (a |sua )?(reserva|altera)/i] },
 ];
@@ -2528,7 +2552,7 @@ app.get("/eval", async (req, res) => {
 <p><small class="n">Cada execução chama a IA uma vez por cenário (custa centavos). Tempo total: ${Math.round((Date.now() - inicio) / 1000)} s. Parâmetros: <code>?so=N</code> (só os N primeiros) · <code>?caso=N</code> (um só) · <code>?json=1</code>.</small></p>
 <table><thead><tr><th></th><th>Cenário</th><th>Mensagem do cliente</th><th>Resposta crua da Luz</th><th>Falhas</th></tr></thead><tbody>${linhas}</tbody></table>
 <h2 style="color:${rotFalhou ? "#ff3344" : "#00cc66"};margin-top:32px">🧭 Roteamento por palavra-chave (grátis, sem IA) — ${roteador.length - rotFalhou}/${roteador.length}</h2>
-<table><thead><tr><th></th><th>Mensagem</th><th>Vai pra Cris (financeiro)?</th></tr></thead><tbody>${roteador.map(r => `<tr><td>${r.ok ? "✅" : "❌"}</td><td><code>${esc(r.msg)}</code></td><td>${r.obtido ? "sim" : "não"}${r.ok ? "" : " (esperado: " + (r.esperado ? "sim" : "não") + ")"}</td></tr>`).join("")}</tbody></table>
+<table><thead><tr><th></th><th>Mensagem</th><th>Roteador</th><th>Resultado</th></tr></thead><tbody>${roteador.map(r => `<tr><td>${r.ok ? "✅" : "❌"}</td><td><code>${esc(r.msg)}</code></td><td>${r.fn}</td><td>${esc(JSON.stringify(r.obtido))}${r.ok ? "" : " (esperado: " + esc(JSON.stringify(r.esperado)) + ")"}</td></tr>`).join("")}</tbody></table>
 </body></html>`);
 });
 
