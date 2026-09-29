@@ -627,65 +627,67 @@ const CARDAPIO_DRINKS = `🍹 *DRINKS AUTORAIS — Soul Botequim*
 
 const CARDAPIO_VINHOS = `🍷 *CARTA DE VINHOS — Soul Botequim*
 
-🫧 *BOLHAS*
-• Eu Borbulho Branco Brut R$130
-  Morada Cia Etílica | Chardonnay | Bento Gonçalves RS Brasil
+🥂 *BRANCOS*
+• Piè dell'Angelo R$194,90
+  Itália | Fiano — Fresco; notas florais e de frutas brancas; toque mineral
+• Lazy Chardonnay R$174,90
+  Chile | Chardonnay — Fresco e equilibrado; notas de frutas tropicais, boa acidez e untuosidade
+• Mikron Torrontés R$153,90
+  Argentina | Torrontés — Aromático e vibrante; notas florais e cítricas; excelente frescor
+• Cara Sucia R$153,90
+  Argentina | Palomino, Pedro Ximénez, Ugni Blanc, Chenin, Moscatel Amarillo e Sauvignonase — Aromas florais e de frutas frescas; corpo médio e boa persistência
+• Vamos de Parranda Blend R$131,90
+  Argentina | Criolla Grande, Criolla Chica e Cereza — Bem refrescante e fácil de tomar; notas florais
+• Di R$174,90
+  Itália | Pinot Grigio — Corpo médio; notas cítricas e de frutas brancas; levemente mineral
+• Pleno R$136,90
+  Brasil | Moscato Giallo — Delicado; aromas de maçã verde, frescor marcante e corpo leve
+• Topázio R$211,90
+  Itália | Pecorino — Fresco e mineral, com ótima acidez e notas cítricas
 
-🥃 *JEREZ*
-• Delgado Zuleta R$160
-  Jerez Fino | Sanlúcar de Barrameda Espanha
+🫧 *ESPUMANTES*
+• Marzarotto Brut R$161,90
+  Brasil | Chardonnay e Pinot Noir — Fresco e cremoso; notas cítricas e boa acidez
+• Lazy Winemaker Pet Nat R$174,90
+  Chile | Chardonnay — Frescor intenso, leve turbidez e perfil descontraído
 
 🌸 *ROSÉS*
-• Falernia Rosé R$140
-  Viña Falernia | Viognier e Syrah | Vale do Elqui Chile
-• Le Loup Dans La Bergerie Rosé R$180
-  Domaine de l'Hortus | Syrah, Cinsault | Languedoc França
+• Sonrojo R$196,90
+  Espanha | Garnacha — Corpo médio, fresco; notas de frutas vermelhas e ótima acidez
+• Vamos de Parranda R$131,90
+  Argentina | Malbec — Refrescante e gastronômico; notas de fruta fresca
+• Le Jaja de Jau R$154,90
+  França | Syrah — Notas de frutas vermelhas maduras e leve toque floral
 
 🍊 *LARANJA*
-• Lazy Winemaker R$150
-  Echeverria | Sauvignon Blanc | Vale do Maule Chile
-
-🥂 *BRANCOS*
-• Lupi Reali Trebbiano d'Abruzzo R$130
-  Passione Natura | Trebbiano | Abruzzo Itália
-• Lazy Winemaker Chardonnay R$140
-  Echeverria | Chardonnay | Vale do Maule Chile
-• Durbanville Hills Chenin Blanc R$180
-  Chenin Blanc | Cidade do Cabo África do Sul
-• Sin R$190
-  Amós Bañeres e Alex Ruiz | Xarel-lo | Catalunha Espanha
-• The Stump Jump R$220
-  D'Arenberg | Riesling, Marsanne e Roussane | McLaren Vale Austrália
-• Pfaffmann Riesling Trocken (1L) R$230
-  Weingut Heinz Pfaffmann | Riesling | Pfalz Alemanha
-• Je T'aime Mais J'ai Soif NV R$240
-  Domaine Vincent Caillé | Melon de Bourgogne e Marsanne | Loire França
-• Les P'tits Gars Blanc R$260
-  Domaine Oratoire Saint Martin | Grenache Blanc, Clairette, Vlognier e Roussaine | Rhône França
+• Lazy Winemaker R$174,90
+  Chile | Sauvignon Blanc — Fresco e aromático; notas de frutas maduras; leve tanino
 
 🍷 *TINTOS*
-• Scorpio Malbec R$130
-  Jasmine Monet | Malbec | Mendoza Argentina
-• Dominio Cassis Cabernet Franc Reserva R$140
-  Cabernet Franc | Lomas de la Paloma Uruguai
-• Aqui Estamos Todos Locos R$150
-  Niven | Lambrusco Maestri | Mendoza Argentina
-• Regeneración Bonarda R$180
-  Familia Kogan | Bonarda | Mendoza Argentina
-• De Lucca Tannat Reserva R$190
-  Lucca Wines | Tannat | Canelones Uruguai
-• Sin Negre R$190
-  Amós Bañeres e Alex Ruiz | Ull de Llebre | Catalunha Espanha
-• Cabernet Sauvignon Funckenhausen (1L) R$220
-  Cab. Sauvignon Malbec Petit Verdot | San Rafael Mendoza Argentina
-• Un Air de la Réméjeanne R$230
-  Domaine de la Réméjeanne | Grenache, Sirah | Rhône França
-• Cousin Oscar R$240
-  Domaine Rimbert | Cinsault, Pinot Noir | Languedoc França
-• Unlitro Costa Toscana IGT R$250
-  Ampeleia | Alicante Nero, Carignano, Sangiovese e Alicante Bouschet | Toscana Itália
-• Hunter's Stoneburn Pinot Noir R$340
-  Hunter's Wines | Pinot Noir | Marlborough Nova Zelândia`;
+• Scorpio R$131,90
+  Argentina | Malbec — Intenso; notas de frutas negras maduras, especiarias e leve defumado
+• Vamos de Parranda Blend R$131,90
+  Argentina | Criolla Grande, Criolla Chica e Cereza — Leve e descontraído; notas de frutas vermelhas
+• Manos Andinas R$153,90
+  Chile | Pinot Noir — Leve e elegante; notas de frutas vermelhas frescas e toque de especiarias
+• Pleno R$153,90
+  Brasil | Merlot — Macio, de corpo médio; notas aromáticas de framboesa e de ameixa
+• Riveras del Chillán R$143,90
+  Chile | Cabernet Sauvignon — Encorpado, boa persistência; notas de frutas negras maduras e especiarias
+• Bruma Marina R$165,90
+  Uruguai | Cabernet Sauvignon, Tannat, Malbec, Merlot, Cabernet Franc e Syrah — Complexo e elegante; notas de fruta madura e de especiarias
+• Chianti R$181,90
+  Itália | Sangiovese, Canaiolo e Merlot — Notas de cerejas frescas, leve toque de ervas e ótima acidez
+• L'Univers Parallèle R$217,90
+  França | Grenache e Syrah — Aromas leves de frutas vermelhas, notas terrosas e de especiarias
+• Argilla R$238,90
+  Portugal | Alicante Bouschet, Alfrocheiro, Touriga Nacional e Petit Verdot — Corpo médio, untuoso, fresco, com boa persistência; notas de frutas negras e silvestres
+• Proyecto Las Compuertas R$298,90
+  Argentina | Cabernet Franc — Elegante e fresco; notas vegetais, herbais e de frutas vermelhas frescas; corpo médio, acidez alta e boa persistência
+• Krontiras R$204,90
+  Argentina | Aglianico — Intenso, encorpado, com taninos presentes e perfil mineral; notas de frutas negras e de especiarias
+• Cara Sucia Blend R$153,90
+  Argentina | Bonarda, Syrah, Sangiovese, Cardinale, Bequignol, Barbera e Buonamico — Intenso, de corpo médio; notas de fruta fresca e de ervas; boa acidez`;
 
 const CARDAPIO_COMIDAS = `🍽️ *CARDÁPIO DE COMIDAS — Soul Botequim*
 
@@ -2443,7 +2445,7 @@ setInterval(async () => {
 const LINK_GETIN_RE = /widget\.getinapp\.com\.br\/d6NZKJ6V/;
 const CASOS_EVAL = [
   { nome: "Saudação + horário",            msg: "oi, tá aberto hoje?",                                        esperar: [/^\s*(oi|olá|ola|e aí|eai|bom dia|boa tarde|boa noite)/i, /abert|fechad|abr[ei]/i], maxEmoji: 1 },
-  { nome: "Opção vegana",                  msg: "tem opção vegana?",                                          esperar: [/vegan/i], naoEsperar: [/n[aã]o temos/i], maxEmoji: 1 },
+  { nome: "Opção vegana",                  msg: "tem opção vegana?",                                          esperar: [/vegan|palmito|legumes|quiabo|op[çc][õo]es/i], naoEsperar: [/n[aã]o temos/i], maxEmoji: 1 },
   { nome: "Entrega → link do iFood",       msg: "vocês fazem entrega?",                                       esperar: [/ifood\.com\.br\/delivery/i] },
   { nome: "Retirada no bar",               msg: "posso pedir pelo whats e buscar aí?",                        esperar: [/retir|busc/i], naoEsperar: [/n[aã]o (temos|fazemos) retirada/i] },
   { nome: "PIX puro na retirada",          msg: "quero pedir pra retirar, como faço o pagamento?",            esperar: [/14096117000125/], naoEsperar: [/\*14096117000125\*|\[14096117000125\]/] },
