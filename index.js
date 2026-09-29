@@ -464,11 +464,17 @@ async function avancarFluxoLeadDourado(telefone, respostaAtual) {
   await finalizarLeadDourado(telefone);
 }
 
+// Cliente quer SAIR do fluxo de coleta. Cuidado com falsos positivos: "esqueci de
+// falar, são 40 pessoas" e "vão preparar a comida?" NÃO são cancelamento.
+function querCancelarFluxo(t) {
+  const txt = String(t || "").toLowerCase();
+  if (/esqueci de|esqueci que|esqueci o|esqueci a/.test(txt)) return false;
+  return /\b(cancelar|cancela|desistir|desisto|deixa pra l[áa]|deixa quieto|esquece( isso)?|pode esquecer|n[ãa]o quero mais|n[ãa]o precisa mais|parar|para com isso|sai dessa|chega)\b/.test(txt);
+}
+
 async function processarFluxoLeadDourado(telefone, mensagem) {
   // Saída de emergência se cliente quiser cancelar
-  const t = String(mensagem).toLowerCase();
-  const cancelar = ["cancelar","desistir","deixa pra la","deixa pra lá","esqueci","esquece","não quero mais","nao quero mais","parar","sai dessa"];
-  if (cancelar.some(g => t.includes(g))) {
+  if (querCancelarFluxo(mensagem)) {
     await apagarFluxo("lead", telefone);
     await enviarMensagem(telefone, "Tudo bem! Se mudar de ideia depois, é só me chamar. 🍻");
     return;
@@ -1191,12 +1197,17 @@ const CASOS_ROTEADOR = [
   { msg: "oi, tá aberto hoje?",                          saudacao: false },
   { msg: "ainda não confirmei a reserva",                confirmacao: false },
   { msg: "confirmei a reserva pelo link",                confirmacao: true },
+  { msg: "esqueci de falar, são 40 pessoas",             cancelar: false },
+  { msg: "vocês vão preparar a comida na hora?",         cancelar: false },
+  { msg: "deixa pra lá, desisto",                         cancelar: true },
+  { msg: "pode cancelar, não quero mais",                cancelar: true },
 ];
 const FN_ROTEADOR = {
   financeiro: ehCobrancaFinanceiro, sugestao: pedeSugestao, drink: querRecomendacaoDrink, cardapio: querCardapio, comida: falaDeComida,
   humano: querFalarComHumano, retirada: mencionaRetirada, delivery: mencionaDelivery, reservaFalhou: naoConseguiuReservar,
   pessoas: extrairQuantidadePessoas, horario: perguntaSobreHorario, esquecido: mencionaObjetoEsquecido, evento: mencionaEventoParaPerguntar,
   vegano: querVeganoVegetariano, fornecedor: ehFornecedorOuEntregador, saudacao: ehSaudacaoPura, confirmacao: pareceConfirmacao,
+  cancelar: querCancelarFluxo,
 };
 function rodarTestesRoteador() {
   const out = [];
@@ -1489,7 +1500,7 @@ FLUXO DE RESERVA (SEGUIR À RISCA):
 - MESA/LUGAR ESPECÍFICO: se o cliente quiser uma mesa ou lugar específico no bar (ex.: na área externa, perto da TV, mesa do canto, mesa grande), oriente-o a escrever esse pedido no campo de *observação* na hora de fazer a reserva pelo link do GetinApp. IMPORTANTE: NÃO garanta lugar cativo. Em dias de maior movimento, não conseguimos assegurar lugar fixo no restaurante. Deixe isso claro de forma simpática, algo como: "Pode anotar sim! É só colocar o lugar que você prefere no campo de *observação* quando fizer a reserva. 😊 Só um detalhe importante: em dias de maior movimento, a gente não consegue garantir lugar cativo, mas a equipe vai fazer o possível pra te atender!". Sempre registre o pedido na observação, mas seja honesta que é sujeito à disponibilidade.
 
 REGRA DO TAMANHO DO GRUPO (CRÍTICA — o limite é 30, siga à risca):
-- ATÉ 30 pessoas (inclusive — ex.: 2, 10, 25, 30): SEMPRE mande o link do GetinApp (https://widget.getinapp.com.br/d6NZKJ6V). NÃO encaminhe pro Dourado. 25 ou 30 pessoas = GetinApp, NUNCA Dourado.
+- ATÉ 30 pessoas (inclusive — ex.: 2, 10, 25, 30): SEMPRE mande o link do GetinApp (https://widget.getinapp.com.br/d6NZKJ6V) JÁ NA PRIMEIRA RESPOSTA, mesmo que ainda não saiba o dia ou o horário — o cliente escolhe isso dentro do link. NUNCA segure o link pra perguntar o dia antes. NÃO encaminhe pro Dourado. 25 ou 30 pessoas = GetinApp, NUNCA Dourado. Diga "pelo nosso link" — nunca "pelo nosso sistema".
 - ACIMA de 30 pessoas (31 ou mais): aí SIM encaminhe pro gerente Dourado no (11) 95465-7178.
 - Eventos PESSOAIS (aniversário, casamento, formatura, despedida, chá de bebê/panela): a regra é a MESMA, SÓ por tamanho. Até 30 pessoas (inclusive) → GetinApp normalmente, mesmo sendo aniversário/comemoração. Só ACIMA de 30 pessoas → Dourado. NÃO mande evento pessoal pequeno (30 ou menos) pro Dourado.
 - "Happy hour", "encontro de amigos", "confraternização casual", grupo comum NÃO é evento pessoal — se for até 30, é GetinApp normal.
