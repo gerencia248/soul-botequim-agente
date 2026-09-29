@@ -250,8 +250,8 @@ function mencionaRetirada(texto) {
     "buscar","vou buscar","pegar no local","pegar ai","pegar aí","pego ai","pego aí",
     "balcão","balcao","no balcao","no balcão",
     "pra levar","para levar","levar pra casa","levar para casa","pra viagem","para viagem","pro viagem",
-    "take away","takeaway","pra retira","retira no local","passar ai","passar aí","passo ai","passo aí"
-  ].some(k => t.includes(k));
+    "take away","takeaway","pra retira","retira no local"
+  ].some(k => t.includes(k)) && !/buscar (informa|saber|entender|um lugar|um bar|uma op)/.test(t);
 }
 function instrucaoRetirada(texto) {
   if (!mencionaRetirada(texto)) return "";
@@ -316,8 +316,11 @@ function extrairQuantidadePessoas(texto) {
   // "N pessoas/convidados/gente"
   m = t.match(/(\d+)\s*(?:pessoas?|convidados?|gente|pax)/);
   if (m) return parseInt(m[1]);
+  // "mesa pra 6", "somos 4", "seremos 8" — mas não "pra 20h", "pra 21:30", "dia 31/10", "uns 40 reais"
+  m = t.match(/(?:mesa (?:pra|para|de)|\bpra|\bpara|somos|seremos)\s*(\d+)(?!\d)(?!\s*(?:h\b|hrs|horas?|:|\/|min|reais|r\$|%))/);
+  if (m) return parseInt(m[1]);
   // "por volta de N" / "em torno de N" / "umas N" / "uns N"
-  m = t.match(/(?:por volta de|em torno de|cerca de|umas?|uns)\s*(\d+)/);
+  m = t.match(/(?:por volta de|em torno de|cerca de|umas?|uns)\s*(\d+)(?!\d)(?!\s*(?:min|minutos?|reais|r\$|anos?|km|horas?|hrs|h\b|%|dias?|semanas?|meses|unidades?|kg|litros?))/);
   if (m) return parseInt(m[1]);
   return null;
 }
@@ -803,12 +806,12 @@ const palavroes = [
 function contemPalavroes(t) { return palavroes.some(p => t.toLowerCase().includes(p)); }
 
 function querFalarComHumano(t) {
-  return ["falar com atendente","falar com humano","falar com pessoa","atendente humano","quero um humano",
-    "não quero robô","nao quero robo","falar com dourado","fala com o dourado",
-    // "gerente" só conta com intenção real de FALAR/SER ATENDIDO por ele
-    // (evita disparar em "quem é o gerente?", "tem gerente de eventos?").
-    "falar com o gerente","falar com gerente","com o gerente","chamar o gerente","chamar gerente",
-    "quero o gerente","pro gerente","chama o gerente","me passa pro gerente"].some(g => t.toLowerCase().includes(g));
+  const txt = String(t || "").toLowerCase();
+  if (/n[ãa]o quero (falar com |conversar com |um |o |a )*(rob[ôo]|bot\b|ia\b|m[áa]quina)|atendente humano|quero um humano|falar com (uma )?pessoa|falar com atendente/.test(txt)) return true;
+  // precisa de INTENÇÃO de falar/ser atendido — "combinei com o gerente ontem",
+  // "mandei pro gerente", "quem é o gerente?" NÃO contam.
+  return /(quero|queria|gostaria|preciso|posso|pode|d[áa] pra|consigo)\s+(falar|conversar|chamar)?\s*(com|o)?\s*(o |a )?(gerente|dourado|atendente|humano|algu[ée]m)/.test(txt)
+      || /(\bfala|\bfalar|\bchama|\bchamar|me passa|\bpassa|transfere)\s+(com\s+|pr[oa]\s+|o\s+)?(o\s+)?(gerente|dourado|atendente)/.test(txt);
 }
 
 // Mensagem que é SÓ uma saudação (sem pergunta/pedido). Serve pra responder
@@ -1025,18 +1028,24 @@ function perguntaSobreHorario(t) {
   ].some(d => txt.includes(d));
   if (mencionaOutroDia) return false;
   // Só dispara handler determinístico quando a pergunta é claramente sobre AGORA/HOJE
+  // "que horas o DJ toca / o show começa / a cozinha fecha" → não é horário do bar (vai pra Luz).
+  if (/\bdj\b|show|m[uú]sica|banda|toca|jogo|almo[çc]o|jantar|happy|evento|cozinha|entrega|pedido/.test(txt)) return false;
   return ["que horas fecha","que horas abre","qual horario","qual o horário","horário de hoje",
-    "fecha hoje","abre hoje","que horas","funcionamento","aberto agora","fechado agora"
+    "fecha hoje","abre hoje","abre que horas","fecha que horas","até que horas","ate que horas",
+    "funcionamento","aberto agora","fechado agora"
   ].some(g => txt.includes(g));
 }
 
 function querRecomendacaoDrink(t) {
-  // Se fala de VINHO (ou de um prato), não é o fluxo de drink — deixa a Luz harmonizar.
-  if (/vinho|vinhos|espumante|ros[ée]\b|carta/.test(String(t || "").toLowerCase())) return false;
-  if (falaDeComida(t)) return false; // "qual me recomenda com o polvo" = harmonização, não drink
-  return ["me indica","me recomenda","qual drink","o que você sugere","o que me recomenda",
-    "não sei o que pedir","nao sei o que pedir","me sugere um drink","qual é o melhor",
-    "algo refrescante","algo forte","drink leve","drink especial"].some(g => t.toLowerCase().includes(g));
+  const txt = String(t || "").toLowerCase();
+  // Vinho/carta → harmonização com a Luz. Prato → falaDeComida. Nunca o fluxo de drink.
+  if (/vinho|vinhos|espumante|ros[ée]\b|carta/.test(txt)) return false;
+  if (falaDeComida(t)) return false;
+  // Precisa mencionar BEBIDA: "qual é o melhor dia pra ir?" não é pedido de drink.
+  const bebida = /drink|drinque|bebida|beber|coquet|caipirinha|cerveja|chopp|chope|\bdose\b|whisky|\bgin\b|vodka|\brum\b|tequila|cacha[çc]a/.test(txt);
+  if (!bebida) return false;
+  return ["me indica","me recomenda","sugere","sugest","recomend","indic","não sei o que pedir","nao sei o que pedir",
+    "qual é o melhor","qual o melhor","algo refrescante","algo forte","leve","especial","o que você sugere","o que me recomenda"].some(g => txt.includes(g));
 }
 
 function querVeganoVegetariano(t) {
@@ -1047,14 +1056,19 @@ function querVeganoVegetariano(t) {
 
 function querCardapio(t) {
   const txt = t.toLowerCase();
-  // PRIMEIRO as categorias ESPECÍFICAS — assim "cardápio de comida" manda só comida,
-  // "cardápio de vinho" só vinho, etc. (antes a palavra "cardápio" caía no completo).
-  if (["vinho","vinhos","carta de vinho","carta de vinhos","carta toda","carta completa","carta inteira","a carta","wine"].some(g => txt.includes(g))) return "vinhos";
-  if (["dose","doses","cachaça","cachaca","whisky","whiskey","rum","tequila","vodka"].some(g => txt.includes(g))) return "doses";
-  if (["comida","comer","petisco","petiscos","lanche","lanches","food","prato","proteína"].some(g => txt.includes(g))) return "comidas";
-  if (["drink","drinque","drinks","cocktail","coquetél","coquetel","bebida","bebidas"].some(g => txt.includes(g))) return "drinks";
-  // SÓ DEPOIS o completo — quando pede "cardápio"/"menu" sem citar uma categoria.
-  if (["cardápio","cardapio","menu","o que tem","o que vocês servem","o que voces servem","o que tem pra comer","o que tem pra beber"].some(g => txt.includes(g))) return "completo";
+  // Só manda card quando o cliente PEDE o cardápio/carta (intenção explícita) ou
+  // pergunta "o que tem pra comer/beber". Palavra solta ("vinho", "comida", "prato")
+  // NÃO basta — senão "vocês entregam comida?" e "tem vinho pra harmonizar?" viravam
+  // despejo de cardápio (casos reais de 28/09). Palavra solta vai pra Luz responder.
+  const explicito = /card[áa]pio|\bmenu\b|carta (de |dos |das |completa|toda|inteira)|\ba carta\b|wine list|lista de (drinks|bebidas|vinhos|comidas|petiscos)/.test(txt);
+  const pedeVer = /(\bquais\b|quero ver|mostra|manda|me passa|tem quais|o que (voc[eê]s )?(tem|têm|servem)( pra| para| de)? (comer|beber|petiscar))/.test(txt);
+  if (!explicito && !pedeVer) return null;
+  if (!explicito && /entrega|delivery|ifood|retir|buscar|hor[áa]rio|que horas|abre|fecha|reserva|quanto custa|pre[çc]o/.test(txt)) return null;
+  if (/vinho|vinhos|carta toda|carta completa|carta inteira|\ba carta\b|wine/.test(txt)) return "vinhos";
+  if (/\bdoses?\b|cacha[çc]a|whisky|whiskey|\brum\b|tequila|vodka/.test(txt)) return "doses";
+  if (/comida|comer|petisco|lanche|food|prato|prote[íi]na/.test(txt)) return "comidas";
+  if (/drink|drinque|cocktail|coquet[eé]l|bebida/.test(txt)) return "drinks";
+  if (explicito || /o que (voc[eê]s )?(tem|têm|servem)/.test(txt)) return "completo";
   return null;
 }
 
@@ -1130,12 +1144,60 @@ const CASOS_ROTEADOR = [
   { msg: "E tem vinho para harmonizar c o polvo",        sugestao: true,  drink: false },
   { msg: "Qual me recomenda c o polvo",                  drink: false,    comida: true },
   { msg: "qual vinho vai bem com a fraldinha?",          sugestao: true,  drink: false },
-  { msg: "Quero vinho",                                  cardapio: "vinhos", sugestao: false },
+  { msg: "Quero vinho",                                  cardapio: null, sugestao: false }, // palavra solta vai pra Luz sugerir
   { msg: "Tem a carta toda?",                            cardapio: "vinhos" },
   { msg: "me indica um drink refrescante",               drink: true,     comida: false },
   { msg: "o que você me indica de petisco?",             sugestao: true,  comida: true },
+  // ── Auditoria geral 28/09: falsos positivos prováveis em cada desvio ──
+  { msg: "vocês entregam comida?",                       cardapio: null,  delivery: true },
+  { msg: "o que tem hoje de música?",                    cardapio: null,  horario: false },
+  { msg: "o que tem pra comer?",                         cardapio: "comidas" },
+  { msg: "quais drinks vocês têm?",                      cardapio: "drinks" },
+  { msg: "me manda o cardápio",                          cardapio: "completo" },
+  { msg: "tem whisky?",                                  cardapio: null,  drink: false },
+  { msg: "qual é o melhor dia pra ir?",                  drink: false },
+  { msg: "me indica um drink forte",                     drink: true },
+  { msg: "não sei o que pedir de bebida",                drink: true },
+  { msg: "combinei com o gerente ontem",                 humano: false },
+  { msg: "quem é o gerente?",                            humano: false },
+  { msg: "já falei com o gerente e ele liberou",         humano: false },
+  { msg: "quero falar com o gerente",                    humano: true },
+  { msg: "me passa pro Dourado",                         humano: true },
+  { msg: "não quero falar com robô",                     humano: true },
+  { msg: "vou passar aí hoje à noite",                   retirada: false },
+  { msg: "quero buscar informações sobre eventos",       retirada: false },
+  { msg: "posso pedir e buscar aí?",                     retirada: true },
+  { msg: "tem pra levar?",                               retirada: true },
+  { msg: "não recebi o link da reserva",                 reservaFalhou: false },
+  { msg: "pode mandar o link de novo?",                  reservaFalhou: false },
+  { msg: "não consegui reservar pelo link, deu erro",    reservaFalhou: true },
+  { msg: "vai ficar uns 40 reais por pessoa?",           pessoas: null },
+  { msg: "chego em cerca de 45 minutos",                 pessoas: null },
+  { msg: "somos umas 40 pessoas",                        pessoas: 40 },
+  { msg: "mesa pra 6 no dia 31/10",                      pessoas: 6 },
+  { msg: "de 20 a 25 convidados",                        pessoas: 25 },
+  { msg: "que horas o DJ toca?",                         horario: false },
+  { msg: "que horas começa o show hoje?",                horario: false },
+  { msg: "que horas fecha hoje?",                        horario: true },
+  { msg: "abre amanhã que horas?",                       horario: false },
+  { msg: "perdi a reserva de sábado",                    esquecido: false },
+  { msg: "esqueci meu casaco aí no bar",                 esquecido: true },
+  { msg: "hoje é meu aniversário!",                      evento: false },
+  { msg: "quero fazer meu aniversário aí pra 20 pessoas", evento: true },
+  { msg: "tem festa hoje?",                              evento: false },
+  { msg: "sou fornecedor de cerveja, quem cuida das compras?", fornecedor: true },
+  { msg: "quero comprar uma cerveja",                    fornecedor: false },
+  { msg: "oi, tudo bem?",                                saudacao: true },
+  { msg: "oi, tá aberto hoje?",                          saudacao: false },
+  { msg: "ainda não confirmei a reserva",                confirmacao: false },
+  { msg: "confirmei a reserva pelo link",                confirmacao: true },
 ];
-const FN_ROTEADOR = { financeiro: ehCobrancaFinanceiro, sugestao: pedeSugestao, drink: querRecomendacaoDrink, cardapio: querCardapio, comida: falaDeComida };
+const FN_ROTEADOR = {
+  financeiro: ehCobrancaFinanceiro, sugestao: pedeSugestao, drink: querRecomendacaoDrink, cardapio: querCardapio, comida: falaDeComida,
+  humano: querFalarComHumano, retirada: mencionaRetirada, delivery: mencionaDelivery, reservaFalhou: naoConseguiuReservar,
+  pessoas: extrairQuantidadePessoas, horario: perguntaSobreHorario, esquecido: mencionaObjetoEsquecido, evento: mencionaEventoParaPerguntar,
+  vegano: querVeganoVegetariano, fornecedor: ehFornecedorOuEntregador, saudacao: ehSaudacaoPura, confirmacao: pareceConfirmacao,
+};
 function rodarTestesRoteador() {
   const out = [];
   for (const c of CASOS_ROTEADOR) for (const k of Object.keys(FN_ROTEADOR)) if (k in c) {
@@ -1189,6 +1251,8 @@ function naoConseguiuReservar(t) {
   // Sinal de PROBLEMA/dificuldade — tolerante a erros de digitação
   // (consigo/consego/consegu, reserva/reseva, etc.). Como o contexto já exige
   // link/getin, um "não" + link já indica que a reserva online falhou.
+  // Cliente pedindo o link (de novo) → não é falha; a Luz reenvia.
+  if (/(manda|mandar|envia|enviar|reenvia|reenviar|passa|passar|me d[áa]|tem|qual)\s+(o |um |esse )?link|n[ãa]o (recebi|chegou|veio|achei|encontrei) (o )?link|link (de novo|novamente|n[ãa]o chegou|n[ãa]o veio)/.test(txt)) return false;
   const problema = /n[ãa]o|erro|trav|problema|ruim|caiu|fora do ar|cons[ei]g|dificuldade|complicad|deu pau|bug/.test(txt);
   return problema;
 }
