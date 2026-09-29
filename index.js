@@ -704,7 +704,6 @@ const CARDAPIO_COMIDAS = `🍽️ *CARDÁPIO DE COMIDAS — Soul Botequim*
 • Bolovo R$30 — Ovo empanado com a massa do nosso croquete
 • Pastel Misto R$43 — De carne e queijo (6 unidades)
 • Chips Batata Doce R$30 — Colorido, sequinho e bem feito
-• Costelinha de Porco R$78 — Pro comer com a mão
 • Quiabo na Brasa com Coalhada Fresca R$46 — Quiabo grelhado, coalhado e páprica picante
 • Tulipinha de Frango Picante R$67 — Fritas com molho de pimenta coreana e mel
 • Milanesa Aperitivo com Creme de Parmesão R$67 — Milanesa crocante, molho cremoso de parmesão
@@ -719,7 +718,6 @@ const CARDAPIO_COMIDAS = `🍽️ *CARDÁPIO DE COMIDAS — Soul Botequim*
 • Oswaldo Aranha R$95 — Filé mignon, alho frito, arroz de brócolis, fritas e farofa de cebola
 • Fraldinha R$140 — Com chimichurri e farofa de cebola
 • Ancho R$135 — Corte nobre na brasa, chimichurri e farofa de cebola
-• Picanha R$165 — Com chimichurri, farofa de cebola, tomate e cebola assados
 • Linguiça Aperitivo R$92 — Com chimichurri e farofa de cebola
 • Legumes na Brasa R$70 — Com chimichurri e farofa de cebola
 
@@ -1370,8 +1368,9 @@ RECOMENDAÇÕES:
 
 RECOMENDAÇÕES DE COMIDA (use para sugerir; indique 2-3 e converse, NUNCA mande o cardápio inteiro):
 - PETISCOS MAIS PEDIDOS: Coxinha de Frango e Catupiry, Torresmo de Panceta, Croquete de Carne, Bolinho de Carne Seca, Cogumelos
-- PRA DIVIDIR EM GRUPO: Costelinha de Porco, Frango Frito, Pastel Misto, Batata Frita
-- PRATOS/CARNES: Oswaldo Aranha, Parmeggiana de Mignon, Picanha, Fraldinha
+- PRA DIVIDIR EM GRUPO: Torresmo de Panceta, Frango Frito, Pastel Misto, Batata Frita
+- PRATOS/CARNES: Oswaldo Aranha, Parmeggiana de Mignon, Fraldinha
+- SAÍRAM DO CARDÁPIO (não oferecer, não mandar pro gerente): Costelinha de Porco e Picanha. Se o cliente pedir um deles, diga com simpatia que saiu do cardápio e sugira uma alternativa parecida (Fraldinha, Oswaldo Aranha ou Torresmo de Panceta).
 - LANCHES: Cheeseburger, Soul Crispy Chicken, Bauru a Moda
 - DIFERENTE/SOFISTICADO: Crudo de Atum e Cítricos, Steak Tartare, Vinagrete Polvo, Palmito Pupunha na Brasa
 - VEGGIE/LEVE: Cogumelos, Palmito Pupunha na Brasa, Legumes na Brasa, Quiabo na Brasa
@@ -2458,9 +2457,10 @@ const CASOS_EVAL = [
   { nome: "Alterar reserva existente → [GERENTE]", msg: "preciso mudar minha reserva de sábado pra domingo",  esperar: [/^\s*\[GERENTE\]/i], naoEsperar: [LINK_GETIN_RE] },
   { nome: "Boleto → [FINANCEIRO] + Cris",  msg: "meu boleto venceu, como tiro a segunda via?",                esperar: [/^\s*\[FINANCEIRO\]/i, /Cris/], naoEsperar: [/Dourado/] },
   { nome: "Duas perguntas, duas respostas", msg: "abre que horas amanhã? e tem música ao vivo?",              esperar: [/\d{1,2}\s*h|\d{1,2}:\d{2}/, /m[uú]sica|instagram|GERENTE/i] },
-  { nome: "Sugestão de petisco (sem despejar cardápio)", msg: "o que você me indica de petisco?",            esperar: [/costelinha|frango|pastel|batata|bolinho/i], maxChars: 900 },
-  { nome: "Foto de prato ([FOTO])",        msg: "[FOTO] foto de uma costelinha de porco com batata frita | legenda: tem esse aí?", esperar: [/costelinha/i], naoEsperar: [/\[FOTO\]|descri[cç][aã]o/i] },
-  { nome: "Carne no cardápio (não é financeiro)", msg: "Tem carne no cardápio?",                            esperar: [/carne|costelinha|fraldinha|torresmo|croquete/i], naoEsperar: [/Cris|financeiro|boleto/i] },
+  { nome: "Sugestão de petisco (sem despejar cardápio)", msg: "o que você me indica de petisco?",            esperar: [/torresmo|frango|pastel|batata|bolinho|coxinha/i], maxChars: 900 },
+  { nome: "Foto de prato ([FOTO])",        msg: "[FOTO] foto de um frango frito dourado com batata frita | legenda: tem esse aí?", esperar: [/frango/i], naoEsperar: [/\[FOTO\]|descri[cç][aã]o/i] },
+  { nome: "Carne no cardápio (não é financeiro)", msg: "Tem carne no cardápio?",                            esperar: [/carne|fraldinha|torresmo|croquete|oswaldo/i], naoEsperar: [/Cris|financeiro|boleto|picanha|costelinha/i] },
+  { nome: "Item que saiu (costelinha) → avisa e sugere", msg: "tem costelinha de porco?",                   esperar: [/sa[ií]u|n[aã]o (temos|est[áa]|tem) mais|fraldinha|oswaldo|torresmo/i], naoEsperar: [/\[GERENTE\]|R\$78/] },
   { nome: "'Já foi feito' não vira confirmação", msg: "já fiz a alteração da reserva com vocês, pode confirmar?", naoEsperar: [/ficou certinh|est[áa] confirmad[ao]|confirmo (a |sua )?(reserva|altera)/i] },
 ];
 const EMOJI_RE = /\p{Extended_Pictographic}/gu;
