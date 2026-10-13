@@ -1395,8 +1395,8 @@ TOM E VOCABULÁRIO:
 - RESPONDA TODAS AS PERGUNTAS: se o cliente fizer mais de uma pergunta (na mesma mensagem ou em mensagens seguidas que chegaram juntas), responda TODAS — nunca ignore nenhuma. Ex.: "posso só chegar hoje? e que horas tem música?" → responda sobre chegar/reserva E sobre a música (programação é no Instagram @soulbotequim). Se não souber UMA delas, use [GERENTE] pra essa e responda as outras normalmente — nunca deixe uma pergunta sem resposta.
 - FOTO DO CLIENTE: se a mensagem começar com [FOTO], é a descrição de uma imagem que o cliente mandou (o sistema já "olhou" a foto por você). Responda ao conteúdo com naturalidade — prato: diga se temos algo parecido no cardápio e sugira; print ou dúvida: responda a dúvida. NUNCA repita o marcador [FOTO] e NUNCA diga que "recebeu uma descrição".
 - Para o que está aqui no prompt (cardápio, horário, reservas, delivery, retirada), responda direto e nunca diga que "não tem a informação".
-- DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai confirmar com o gerente e já retorna. O marcador vai SEMPRE na PRIMEIRA posição da resposta, e a resposta inteira é dirigida ao CLIENTE. NUNCA escreva um recado/pergunta para o gerente dentro da resposta (ex.: "Oi! Cliente perguntou se... pode confirmar?") — o cliente veria isso. O sistema já encaminha a pergunta do cliente ao gerente automaticamente. Ex.: "[GERENTE] Boa pergunta! 😊 Deixa eu confirmar isso com o gerente e já te respondo, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva NOVA/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos"). EXCEÇÃO: alterar/remarcar uma reserva JÁ EXISTENTE (mudar dia, horário ou número de pessoas de uma reserva que o cliente já fez) NÃO é self-service pelo link do GetinApp — nesse caso use [GERENTE] e diga que vai confirmar a alteração com o gerente, em vez de só prometer e não encaminhar de verdade.
-- DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai confirmar com a *Cris* (financeiro). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou confirmar isso com a nossa Cris do financeiro e já te respondo." NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
+- DÚVIDA QUE VOCÊ REALMENTE NÃO SABE (algo que NÃO está neste prompt — ex.: uma pergunta específica da operação, um pedido especial, uma condição que não foi informada): NÃO invente e NÃO diga só "não sei". Comece sua resposta com o marcador [GERENTE] (o sistema remove antes de enviar) e diga de forma simpática que vai passar a dúvida pro nosso gerente, o Dourado, e que ELE vai chamar o cliente no WhatsApp pra responder. NUNCA prometa que VOCÊ vai avisar, retornar ou responder depois ("te aviso por aqui", "assim que ele confirmar eu te falo") — você NÃO recebe a resposta do gerente; quem responde ao cliente é ele, direto. O marcador vai SEMPRE na PRIMEIRA posição da resposta, e a resposta inteira é dirigida ao CLIENTE. NUNCA escreva um recado/pergunta para o gerente dentro da resposta (ex.: "Oi! Cliente perguntou se... pode confirmar?") — o cliente veria isso. O sistema já encaminha a pergunta do cliente ao gerente automaticamente. Ex.: "[GERENTE] Boa pergunta! 😊 Vou passar sua dúvida pro nosso gerente, o Dourado, e ele mesmo te chama no WhatsApp pra responder, tá?". Use o [GERENTE] só quando for algo que você de fato não sabe — não para horário/reserva NOVA/delivery/retirada nem para itens que ESTÃO no cardápio (esses você já sabe). Item/produto que NÃO consta no cardápio também é [GERENTE] (nunca diga "não temos"). EXCEÇÃO: alterar/remarcar uma reserva JÁ EXISTENTE (mudar dia, horário ou número de pessoas de uma reserva que o cliente já fez) NÃO é self-service pelo link do GetinApp — nesse caso use [GERENTE] e diga que vai passar o pedido de alteração pro gerente e que ele te chama no WhatsApp pra confirmar, em vez de só prometer e não encaminhar de verdade.
+- DÚVIDA FINANCEIRA (cobrança, boleto, fatura, 2ª via, vencimento, conta em atraso, nota fiscal, pagamento a fornecedor): use o marcador [FINANCEIRO] em vez de [GERENTE], e diga que vai passar a dúvida pra *Cris* (financeiro) e que ELA vai chamar o cliente no WhatsApp pra resolver (NUNCA prometa que você mesma vai retornar). Ex.: "[FINANCEIRO] Boa pergunta! 😊 Vou passar isso pra nossa Cris do financeiro e ela te chama no WhatsApp pra resolver, tá?" NUNCA mande assunto de cobrança/boleto para o Dourado — financeiro é SEMPRE com a Cris (11) 98881-0344.
 - NÃO REVISITE O PASSADO POR CONTA PRÓPRIA: responda SOMENTE ao que o cliente perguntou AGORA. Nunca "corrija" espontaneamente algo que você disse em mensagens anteriores, nunca traga de volta reservas, pedidos, leads ou recomendações antigas, e não peça desculpas por conversas passadas — a menos que o cliente pergunte sobre isso. Se o cardápio ou a carta mudaram, simplesmente use as informações atuais daqui pra frente, sem comentar a mudança.
 - NUNCA CONFIRME O QUE VOCÊ NÃO VERIFICOU: alteração/cancelamento de reserva, liberação de mesa, pedido pronto ou pagamento aprovado só quem confirma é o gerente/equipe. Se o cliente disser "já foi feito", "já resolvi" ou "pode confirmar", responda de forma simpática que anotou e que o gerente confirma com ele — NUNCA diga "sua reserva ficou certinha" ou "está confirmado" por conta própria. Se você já disse antes que ia confirmar com o gerente, não repita a mesma frase a cada mensagem: responda ao que foi perguntado e mencione o retorno só se fizer sentido.
 
@@ -2217,8 +2217,8 @@ async function processarMensagem(telefone, mensagem) {
         .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
       if (!resposta) {
         resposta = marcadoFinanceiro
-          ? "Boa pergunta! 😊 Vou confirmar isso com a nossa *Cris* (financeiro) e já te respondo, tá?"
-          : "Boa pergunta! 😊 Deixa eu confirmar isso com o nosso gerente e já te respondo, tá?";
+          ? "Boa pergunta! 😊 Vou passar isso pra nossa *Cris* (financeiro) e ela te chama no WhatsApp pra resolver, tá?"
+          : "Boa pergunta! 😊 Vou passar sua dúvida pro nosso gerente, o *Dourado*, e ele mesmo te chama no WhatsApp pra responder, tá?";
       }
       const destino = marcadoFinanceiro ? CONFIG.NUMERO_CRIS : CONFIG.NUMERO_DOURADO;
       const titulo = marcadoFinanceiro
@@ -2229,7 +2229,7 @@ async function processarMensagem(telefone, mensagem) {
           titulo + "\n📱 " + telefone +
           "\n💬 Pergunta: \"" + String(mensagem).substring(0, 300) + "\"" +
           (notaInterna ? "\n📝 Nota da Luz: " + notaInterna.substring(0, 300) : "") +
-          "\n\nPode esclarecer que eu passo pro cliente. 🙏");
+          "\n\n👉 Por favor, responda *direto ao cliente* (a Luz NÃO recebe sua resposta e já avisou o cliente que você vai chamar): https://wa.me/" + String(telefone).replace(/\D/g, ""));
         console.log("[" + (marcadoFinanceiro ? "FINANCEIRO→CRIS" : "GERENTE→DOURADO") + "] Dúvida encaminhada | cliente: " + telefone);
       } catch (e) { console.error("[ESCALONAMENTO] Falha ao encaminhar dúvida:", e.message); }
     }
@@ -2464,6 +2464,72 @@ app.get("/test-horarios", async (req, res) => {
 </table>
 <p style="color:#666; margin-top:20px; font-size:12px;">Esta página roda a suíte de testes em tempo real. Cada vez que você recarrega, ela re-executa.</p>
 </body></html>`);
+});
+
+// ── AUDITORIA DA MEMÓRIA — TEMPORÁRIO (revisão de 13/10/2026; remover em seguida) ──
+// Só existe se a variável AUDIT_KEY estiver definida na Railway (o repo é público,
+// então a chave NÃO fica no código). Devolve um resumo com telefones mascarados.
+app.get("/admin/auditoria-memoria", async (req, res) => {
+  const chave = process.env.AUDIT_KEY;
+  if (!chave || req.query.k !== chave) return res.status(404).send("Not found");
+  const mask = t => "…" + String(t).slice(-4);
+  const trecho = (s, i, n = 110) => { s = String(s || ""); const a = Math.max(0, i - n), b = Math.min(s.length, i + n); return (a ? "…" : "") + s.slice(a, b).replace(/\s+/g, " ") + (b < s.length ? "…" : ""); };
+  const txt = c => typeof c === "string" ? c : JSON.stringify(c);
+  const norm = v => v.replace(",", ".").replace(/\.00$/, "").replace(/\.0$/, "");
+  const precosOk = new Set([...getSYSTEM_PROMPT().matchAll(/R\$\s?(\d{1,4}(?:[.,]\d{1,2})?)/g)].map(m => norm(m[1])));
+  const fonesOk = new Set(["954987240", "954657178", "988810344", "953580917"]);
+  const regras = {
+    sazonal: { role: "assistant", re: /copa do mundo|\bcopa\b|mundial|jogo do brasil|sele[çc][ãa]o brasileira|torcer pelo brasil/i },
+    identidade: { role: "assistant", re: /\b(?:sou a|me chamo|aqui (?:é|e) a) soul\b|sou (?:um |uma )?(?:rob[ôo]|bot|intelig[êe]ncia artificial|assistente virtual|chatgpt|claude)\b|modelo de linguagem|primeira mensagem do cliente|sendo configurad/i },
+    promete_retorno: { role: "assistant", re: /te (?:aviso|retorno|falo|respondo) (?:por )?aqui|j[áa] te respondo|assim que (?:o gerente|o dourado|ele|ela|a cris)[^.!?\n]{0,25}(?:confirmar|retornar|responder)[^.!?\n]{0,30}(?:te aviso|te falo|te respondo|aviso)/i },
+    nega_retirada: { role: "assistant", re: /n[ãa]o (?:temos|fazemos|trabalhamos com) (?:op[çc][ãa]o de )?retirada/i },
+    nao_sabe: { role: "assistant", re: /n[ãa]o tenho (?:essa|esta|essas) informa|n[ãa]o sei (?:informar|te dizer|dizer)/i },
+    segunda_aberto: { role: "assistant", re: /segunda(?:-feira)?[^.!?\n]{0,40}(?:abrimos|estamos abert|funcionamos|das \d{1,2}h)/i, excl: /segunda(?:-feira)?[^.!?\n]{0,50}fech/i },
+    reclamacao_cliente: { role: "user", re: /p[ée]ssim|horr[íi]vel|absurd|n[ãa]o respond|ningu[ée]m respond|demor|errad[oa]|mentir|rid[íi]cul|decepcion|n[ãa]o funciona|rob[ôo]/i },
+  };
+  const achados = { telefone_desconhecido: [], preco_fora_cardapio: [], resposta_repetida: [] };
+  const totais = { telefone_desconhecido: 0, preco_fora_cardapio: 0, resposta_repetida: 0 };
+  for (const k of Object.keys(regras)) { achados[k] = []; totais[k] = 0; }
+  const add = (k, item, max = 25) => { totais[k]++; if (achados[k].length < max) achados[k].push(item); };
+  let conversas = 0, mensagens = 0, cursor = "0";
+  const historicos = {};
+  do {
+    const [prox, chaves] = await redis.scan(cursor, "MATCH", "memoria:*", "COUNT", 200);
+    cursor = prox;
+    for (const key of chaves) {
+      let h;
+      try { h = JSON.parse((await redis.get(key)) || "[]"); } catch (e) { continue; }
+      if (!Array.isArray(h)) continue;
+      const tel = key.slice("memoria:".length);
+      historicos[tel] = h; conversas++; mensagens += h.length;
+      h.forEach((m, i) => {
+        const c = txt(m.content);
+        for (const [nome, r] of Object.entries(regras)) {
+          if (m.role !== r.role) continue;
+          const mm = c.match(r.re);
+          if (!mm || (r.excl && r.excl.test(c))) continue;
+          add(nome, { cliente: mask(tel), msg: i, trecho: trecho(c, mm.index) });
+        }
+        if (m.role !== "assistant") return;
+        const semPix = c.replace(/14\.?096\.?117\/?0001-?25/g, "");
+        for (const f of semPix.matchAll(/\(?\d{2}\)?\s?9\d{4}[-\s]?\d{4}/g)) {
+          const n = f[0].replace(/\D/g, "").slice(-9);
+          if (!fonesOk.has(n)) add("telefone_desconhecido", { cliente: mask(tel), msg: i, numero: f[0], trecho: trecho(semPix, f.index, 80) });
+        }
+        for (const p of c.matchAll(/R\$\s?(\d{1,4}(?:[.,]\d{1,2})?)/g)) {
+          if (!precosOk.has(norm(p[1]))) add("preco_fora_cardapio", { cliente: mask(tel), msg: i, valor: "R$" + p[1], trecho: trecho(c, p.index, 70) }, 60);
+        }
+        if (i > 0 && h[i - 1].role === "assistant" && txt(h[i - 1].content) === c) add("resposta_repetida", { cliente: mask(tel), msg: i, trecho: c.slice(0, 120) });
+      });
+    }
+  } while (cursor !== "0");
+  const leads = (await listarLeads()).slice(0, 12);
+  const amostra = leads.map(l => ({
+    cliente: mask(l.telefone),
+    lead: { pessoas: l.pessoas, dia: l.dia, status: l.status, criadoEm: l.criadoEm },
+    conversa: (historicos[l.telefone] || []).slice(-16).map(m => (m.role === "assistant" ? "LUZ: " : "CLI: ") + txt(m.content).slice(0, 500)),
+  }));
+  res.json({ conversas, mensagens, precosConhecidos: precosOk.size, totais, achados, amostra });
 });
 
 app.listen(CONFIG.PORT, () => {
